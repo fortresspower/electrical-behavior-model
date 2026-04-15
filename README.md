@@ -37,10 +37,6 @@ GitHub Pages, "Deploy from a branch" mode, `main` / `/` (root).
 
 Push to `main` → GitHub rebuilds and redeploys in ~30 seconds. Nothing else is automated — there is no workflow file, no CI secrets, no infrastructure.
 
-## Design doc
-
-See [`docs/2026-04-15-electrical-behavior-model-gh-pages-design.md`](docs/2026-04-15-electrical-behavior-model-gh-pages-design.md) for why it's built this way.
-
 ## Upgrading to a real build
 
 If this ever outgrows the single-file pattern (dependency hell, dev-tooling needs, multi-page), migrate to Vite + a GitHub Actions deploy workflow. It's ~30 minutes of work. The single-file approach was chosen for minimum ongoing maintenance.
