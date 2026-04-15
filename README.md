@@ -1,42 +1,26 @@
 # Electrical Behavior Model
 
-Interactive battery + inverter wiring validator for Fortress Power installers and internal engineering.
+Browser-based tool for Fortress Power installers and internal engineering: model **Envy** inverter → battery wiring, run checks on current and connection limits, and see overloads and mis-wiring called out in the UI.
 
-**Published at:** https://fortresspower.github.io/electrical-behavior-model/
+**Live site:** https://fortresspower.github.io/electrical-behavior-model/ (public). This repository is private.
 
-The published site is public; this source repo is private.
+## Scope and limitations
 
-## What it does
+- **Inverters:** Envy 8kW, 10kW, Envy Duo 21 / Envy 12kW (shared model entry where the app groups them).
+- **Checks:** Port counts, conductor rating assumptions, node current, Share Battery topology, and eWay Lite / eWay / eWay Pro connection-point capacity.
+- **Not a substitute for field work or code compliance.** For education and planning only; follow product documentation and use a licensed electrician for real installations.
 
-Models inverter → battery wiring topologies for Envy 8kW / 10kW / Envy Duo 21 / Envy 12kW.
-Validates port limits, conductor ratings, node current, Share Battery topology, and connection point (eWay Lite / eWay / eWay Pro) capacity. Highlights overloads, improper terminal usage, and inactive components.
+## Development
 
-For theoretical and educational use only — always consult a licensed electrician before installing anything.
+The app is a **single static file** (`index.html`): React 18 via CDN, inline Babel, no `package.json` or build step—by design, to keep maintenance minimal.
 
-## Editing
-
-This is a **single-file, no-build** static site. The entire app is `index.html`:
-
-- React 18 + ReactDOM 18 + Babel standalone loaded from unpkg
-- Component code is an inline `<script type="text/babel">` block
-- No `package.json`, no node, no bundler
-
-To iterate locally:
+**Run locally** (any static server):
 
 ```bash
-# any static file server works; e.g.
 python3 -m http.server 8080
-# then open http://localhost:8080/
+# open http://localhost:8080/
 ```
 
-Edit `index.html`, refresh the browser. No build step.
+Edit `index.html` and refresh the browser.
 
-## Deployment
-
-GitHub Pages, "Deploy from a branch" mode, `main` / `/` (root).
-
-Push to `main` → GitHub rebuilds and redeploys in ~30 seconds. Nothing else is automated — there is no workflow file, no CI secrets, no infrastructure.
-
-## Upgrading to a real build
-
-If this ever outgrows the single-file pattern (dependency hell, dev-tooling needs, multi-page), migrate to Vite + a GitHub Actions deploy workflow. It's ~30 minutes of work. The single-file approach was chosen for minimum ongoing maintenance.
+**Deploy:** GitHub Pages, deploy from branch `main` at repository root. Pushing to `main` updates the live site; there is no separate CI workflow or build.
