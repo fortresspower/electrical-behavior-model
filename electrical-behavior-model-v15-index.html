@@ -1,118 +1,123 @@
-<\!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Electrical Behavior Model — Fortress Power</title>
-  <meta name="description" content="Interactive battery + inverter wiring validator for Fortress Power installers.">
-  <meta name="robots" content="noindex,nofollow">
-  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-  <style>
-    html, body { margin: 0; padding: 0; }
-    body { background: #f8fafc; font-family: Arial, sans-serif; color: #0f172a; }
-    #root { min-height: 100vh; }
-    #boot-status { padding: 24px; font-size: 13px; color: #475569; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Battery & inverter wiring validator</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: #f8fafc; color: #0f172a; font-family: Arial, sans-serif; }
+.page { min-height: 100vh; padding: 24px; }
+.container { max-width: 1500px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+.headerRow { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.title { font-size: 30px; font-weight: 700; margin: 0; }
+.subtitle { margin-top: 8px; max-width: 980px; font-size: 13px; line-height: 1.5; color: #475569; }
+.buttonRow { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { border: 1px solid #cbd5e1; background: #ffffff; border-radius: 10px; padding: 8px 12px; font-size: 12px; cursor: pointer; color: #0f172a; font-family: inherit; }
+.btn.active { border: 1px solid #94a3b8; background: #eff6ff; box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 2px 8px rgba(15,23,42,0.12); font-weight: 700; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.layout { display: grid; grid-template-columns: 35% 65%; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+.panel { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 1px 2px rgba(15,23,42,0.05); }
+.panelHeader { padding: 14px 16px 0 16px; font-size: 18px; font-weight: 700; }
+.setupBody { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.panelBody { padding: 16px; }
+.section { border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; padding: 10px; }
+.section > summary { cursor: pointer; font-size: 12px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+.subFieldLabel { font-size: 12px; font-weight: 700; margin-bottom: 6px; display: block; color: #0f172a; }
+.select { width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; background: #ffffff; padding: 8px 10px; font-size: 12px; color: #0f172a; font-family: inherit; }
+.input { width: 100%; height: 32px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 8px; font-size: 14px; color: #0f172a; box-sizing: border-box; font-family: inherit; }
+.smallButton { width: 32px; height: 32px; border: 1px solid #cbd5e1; background: #ffffff; border-radius: 8px; font-size: 16px; cursor: pointer; font-family: inherit; }
+.twoCol { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.row { display: flex; align-items: center; gap: 6px; }
+.tableWrap { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tbl th { border-bottom: 1px solid #e2e8f0; padding: 6px 8px; text-align: center; font-weight: 700; }
+.tbl td { border-bottom: 1px solid #f1f5f9; padding: 6px 8px; text-align: center; }
+.tbl td.lbl { text-align: left; font-weight: 700; }
+.toggleOn { border: 1px solid #0f172a; background: #0f172a; color: #ffffff; border-radius: 8px; padding: 4px 8px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.toggleOff { border: 1px solid #cbd5e1; background: #ffffff; color: #475569; border-radius: 8px; padding: 4px 8px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.helper { font-size: 11px; color: #64748b; margin-top: 4px; }
+.configButtonRow { display: flex; gap: 8px; flex-wrap: wrap; }
+.resultsCol { display: flex; flex-direction: column; gap: 16px; }
+.figureWrap { border: 1px solid #e2e8f0; border-radius: 16px; background: #ffffff; padding: 12px; overflow-x: auto; }
+.figureWrap.fullscreen { overflow: auto; height: calc(100vh - 140px); }
+.badgeRow { display: flex; gap: 8px; flex-wrap: wrap; }
+.badge { border: 1px solid #cbd5e1; background: #ffffff; border-radius: 999px; padding: 6px 10px; font-size: 12px; color: #334155; }
+.goodBadge { border: 1px solid #bbf7d0; background: #dcfce7; color: #166534; border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
+.badBadge { border: 1px solid #fecaca; background: #fee2e2; color: #991b1b; border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
+.warnBadge { border: 1px solid #fde68a; background: #fef3c7; color: #92400e; border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
+.alertRed { border: 1px solid #fecaca; background: #fef2f2; border-radius: 16px; padding: 14px; }
+.alertYellow { border: 1px solid #fde68a; background: #fffbeb; border-radius: 16px; padding: 14px; }
+.alertTitleRed { color: #991b1b; font-weight: 700; margin-bottom: 8px; }
+.alertTitleYellow { color: #92400e; font-weight: 700; margin-bottom: 8px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.card { border: 1px solid #e2e8f0; border-radius: 16px; padding: 14px; background: #ffffff; }
+.cardRed { border: 1px solid #fca5a5; border-radius: 16px; padding: 14px; background: #fef2f2; }
+.cardYellow { border: 1px solid #fde68a; border-radius: 16px; padding: 14px; background: #fffbeb; }
+.progress { margin-top: 10px; height: 10px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+.legend { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #475569; }
+.legendItem { display: flex; align-items: center; gap: 8px; }
+.swatchBlack { width: 28px; height: 0; border-top: 3px solid #000000; }
+.swatchBlue { width: 28px; height: 0; border-top: 2px dashed #2563eb; }
+.swatchMustard { width: 28px; height: 0; border-top: 2px dashed #d4a017; }
+.figureHeaderRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 0 16px; }
+.overlayBackdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); z-index: 1000; padding: 20px; box-sizing: border-box; overflow: auto; }
+.overlayPanel { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 10px 30px rgba(15,23,42,0.18); min-height: calc(100vh - 40px); }
+.bpRow { display: flex; align-items: center; justify-content: space-between; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; gap: 8px; }
+.bpRowName { font-weight: 700; }
+.bbRow { display: flex; align-items: center; justify-content: space-between; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; gap: 8px; }
+.checkLabel { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.cardHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cardName { font-weight: 700; }
+.cardLine { font-size: 13px; color: #334155; margin-bottom: 4px; }
+.cardSmall { font-size: 12px; color: #64748b; }
+.obsList { margin: 0; padding-left: 20px; }
+.obsListSpaced { margin-top: 10px; padding-left: 20px; }
+.obsCommList { margin-top: 6px; margin-left: 26px; padding-left: 18px; }
+.obsCommList li { list-style-type: circle; }
+.obsContainer { font-size: 13px; color: #78350f; line-height: 1.6; }
+.alertList { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.alertList.red { color: #7f1d1d; }
+.figureTitle { font-size: 18px; font-weight: 700; }
+</style>
 </head>
 <body>
-  <div id="root"><div id="boot-status">Loading electrical behavior model…</div></div>
-  <script type="text/babel" data-presets="react">
-    const { useMemo, useState, useEffect } = React;
+<div id="root"></div>
+<script>
+(function() {
+"use strict";
 
-const DEFAULT_INVERTER_CURRENT = 250;
+// === Constants ===
 const BATTERY_MAX = 250;
 const CONDUCTOR_RATING = 250;
 const MAX_BATTERY_COUNT = 24;
 const MAX_INVERTER_COUNT = 10;
-
 const INVERTER_MODELS = {
   envy_8kw: { label: "Envy 8kW", current: 167, maxPorts: 1, bridgedPorts: false },
   envy_10kw: { label: "Envy 10kW", current: 210, maxPorts: 1, bridgedPorts: false },
   envy_duo_21_envy_12kw: { label: "Envy Duo 21 / Envy 12kW", current: 250, maxPorts: 2, bridgedPorts: true },
 };
 
-const styles = {
-  page: { minHeight: "100vh", background: "#f8fafc", padding: 24, color: "#0f172a", fontFamily: "Arial, sans-serif" },
-  container: { maxWidth: 1500, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 },
-  headerRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" },
-  title: { fontSize: 30, fontWeight: 700, margin: 0 },
-  subtitle: { marginTop: 8, maxWidth: 980, fontSize: 13, lineHeight: 1.5, color: "#475569" },
-  buttonRow: { display: "flex", gap: 8, flexWrap: "wrap" },
-  button: { border: "1px solid #cbd5e1", background: "#ffffff", borderRadius: 10, padding: "8px 12px", fontSize: 12, cursor: "pointer", color: "#0f172a" },
-  activeButton: { border: "1px solid #94a3b8", background: "#eff6ff", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7), 0 2px 8px rgba(15,23,42,0.12)", fontWeight: 700 },
-  buttonDisabled: { opacity: 0.6, cursor: "not-allowed" },
-  layout: { display: "grid", gridTemplateColumns: "35% 65%", gap: 16, alignItems: "start" },
-  panel: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 16, boxShadow: "0 1px 2px rgba(15,23,42,0.05)" },
-  panelHeader: { padding: "14px 16px 0 16px", fontSize: 18, fontWeight: 700 },
-  setupBody: { padding: 16, display: "flex", flexDirection: "column", gap: 8, maxHeight: "none", overflowY: "visible" },
-  panelBody: { padding: 16 },
-  section: { border: "1px solid #e2e8f0", borderRadius: 12, background: "#ffffff", padding: 10 },
-  summary: { cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#0f172a", marginBottom: 8 },
-  fieldLabel: { fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" },
-  subFieldLabel: { fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block", color: "#0f172a" },
-  select: { width: "100%", border: "1px solid #cbd5e1", borderRadius: 10, background: "#ffffff", padding: "8px 10px", fontSize: 12, color: "#0f172a" },
-  input: { width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px", fontSize: 14, color: "#0f172a", boxSizing: "border-box" },
-  smallButton: { width: 32, height: 32, border: "1px solid #cbd5e1", background: "#ffffff", borderRadius: 8, fontSize: 16, cursor: "pointer" },
-  twoCol: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" },
-  row: { display: "flex", alignItems: "center", gap: 6 },
-  tableWrap: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: 12 },
-  th: { borderBottom: "1px solid #e2e8f0", padding: "6px 8px", textAlign: "center", fontWeight: 700 },
-  td: { borderBottom: "1px solid #f1f5f9", padding: "6px 8px", textAlign: "center" },
-  tdLabel: { borderBottom: "1px solid #f1f5f9", padding: "6px 8px", textAlign: "left", fontWeight: 700 },
-  toggleOn: { border: "1px solid #0f172a", background: "#0f172a", color: "#ffffff", borderRadius: 8, padding: "4px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" },
-  toggleOff: { border: "1px solid #cbd5e1", background: "#ffffff", color: "#475569", borderRadius: 8, padding: "4px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" },
-  linkRow: { display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #e2e8f0", borderRadius: 10, padding: "8px 10px", marginBottom: 8, gap: 8 },
-  helper: { fontSize: 11, color: "#64748b", marginTop: 4 },
-  configButtonRow: { display: "flex", gap: 8, flexWrap: "wrap" },
-  resultsCol: { display: "flex", flexDirection: "column", gap: 16 },
-  figureWrap: { border: "1px solid #e2e8f0", borderRadius: 16, background: "#ffffff", padding: 12, overflowX: "auto" },
-  badgeRow: { display: "flex", gap: 8, flexWrap: "wrap" },
-  badge: { border: "1px solid #cbd5e1", background: "#ffffff", borderRadius: 999, padding: "6px 10px", fontSize: 12, color: "#334155" },
-  goodBadge: { border: "1px solid #bbf7d0", background: "#dcfce7", color: "#166534", borderRadius: 999, padding: "6px 10px", fontSize: 12, fontWeight: 700 },
-  badBadge: { border: "1px solid #fecaca", background: "#fee2e2", color: "#991b1b", borderRadius: 999, padding: "6px 10px", fontSize: 12, fontWeight: 700 },
-  warnBadge: { border: "1px solid #fde68a", background: "#fef3c7", color: "#92400e", borderRadius: 999, padding: "6px 10px", fontSize: 12, fontWeight: 700 },
-  alertRed: { border: "1px solid #fecaca", background: "#fef2f2", borderRadius: 16, padding: 14 },
-  alertYellow: { border: "1px solid #fde68a", background: "#fffbeb", borderRadius: 16, padding: 14 },
-  alertTitleRed: { color: "#991b1b", fontWeight: 700, marginBottom: 8 },
-  alertTitleYellow: { color: "#92400e", fontWeight: 700, marginBottom: 8 },
-  cards: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 },
-  card: { border: "1px solid #e2e8f0", borderRadius: 16, padding: 14, background: "#ffffff" },
-  cardRed: { border: "1px solid #fca5a5", borderRadius: 16, padding: 14, background: "#fef2f2" },
-  cardYellow: { border: "1px solid #fde68a", borderRadius: 16, padding: 14, background: "#fffbeb" },
-  progress: { marginTop: 10, height: 10, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" },
-  legend: { marginTop: 16, display: "flex", flexWrap: "wrap", gap: 16, fontSize: 12, color: "#475569" },
-  legendItem: { display: "flex", alignItems: "center", gap: 8 },
-  swatchBlack: { width: 28, height: 0, borderTop: "3px solid #000000" },
-  swatchBlue: { width: 28, height: 0, borderTop: "2px dashed #2563eb" },
-  swatchMustard: { width: 28, height: 0, borderTop: "2px dashed #d4a017" },
-  figureHeaderRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 16px 0 16px" },
-  overlayBackdrop: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", zIndex: 1000, padding: 20, boxSizing: "border-box", overflow: "auto" },
-  overlayPanel: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 16, boxShadow: "0 10px 30px rgba(15,23,42,0.18)", minHeight: "calc(100vh - 40px)" },
-  figureWrapFullscreen: { border: "1px solid #e2e8f0", borderRadius: 16, background: "#ffffff", padding: 12, overflow: "auto", height: "calc(100vh - 140px)" },
-};
-
+// === Pure helpers ===
 function clampCount(value, max) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 1;
   return Math.max(1, Math.min(max, Math.floor(n)));
 }
-
 function formatAmps(value) {
   const rounded = Math.round((Number(value) || 0) * 10) / 10;
-  return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
-
 function names(prefix, count) {
-  return Array.from({ length: count }, (_, i) => `${prefix}${i + 1}`);
+  return Array.from({ length: count }, (_, i) => prefix + (i + 1));
 }
-
-function matrix(rows, cols, fill = false) {
+function matrix(rows, cols, fill) {
+  if (fill === undefined) fill = false;
   return Array.from({ length: rows }, () => Array.from({ length: cols }, () => fill));
 }
-
 function getConnectionPointConfig(type) {
   switch (type) {
     case "three_point_terminal":
@@ -123,33 +128,36 @@ function getConnectionPointConfig(type) {
       return { label: "eWay Lite", nodeRating: 250, terminalCount: 1 };
   }
 }
-
 function isFrontStackBottomBattery(index, batteryLayoutMode) {
   return batteryLayoutMode === "front_stacking" && index % 2 === 1;
 }
-
 function getEffectiveBatteryConnectionType(index, configuredType, batteryLayoutMode) {
   return isFrontStackBottomBattery(index, batteryLayoutMode) ? "single_point_terminal" : configuredType;
 }
-
 function getFrontStackColumnCount(batteryCount) {
   return Math.max(1, Math.ceil(batteryCount / 2));
 }
-
 function getTopBatteryIndexForColumn(columnIndex) {
   return columnIndex * 2;
 }
-
 function getBottomBatteryIndexForColumn(columnIndex, batteryCount) {
   const candidate = columnIndex * 2 + 1;
   return candidate < batteryCount ? candidate : -1;
 }
-
-function getLastBatteryIndexForColumn(columnIndex, batteryCount) {
-  const bottom = getBottomBatteryIndexForColumn(columnIndex, batteryCount);
-  return bottom !== -1 ? bottom : getTopBatteryIndexForColumn(columnIndex);
+function distributeStartAndEnd(total, parts, index) {
+  const start = Math.floor((index * total) / parts);
+  const end = Math.floor(((index + 1) * total) / parts);
+  return [start, Math.max(start + 1, end)];
 }
-
+function getFrontStackGroupsByBatteryCount(inverterCount, batteryCount) {
+  return Array.from({ length: inverterCount }, (_, inv) => {
+    const range = distributeStartAndEnd(batteryCount, inverterCount, inv);
+    const start = range[0];
+    const rawEnd = range[1];
+    const end = Math.min(batteryCount, rawEnd);
+    return Array.from({ length: Math.max(0, end - start) }, (_, offset) => start + offset);
+  }).filter((group) => group.length > 0);
+}
 function buildBatteryLinkGroups(batteryCount, batteryLinks) {
   const groups = [];
   let start = 0;
@@ -163,7 +171,6 @@ function buildBatteryLinkGroups(batteryCount, batteryLinks) {
   }
   return groups;
 }
-
 function buildEffectiveGroups(inverterCount, batteryCount, directFlows, batteryLinks, bridgedPorts) {
   const parent = Array.from({ length: batteryCount }, (_, i) => i);
   const find = (x) => {
@@ -178,16 +185,14 @@ function buildEffectiveGroups(inverterCount, batteryCount, directFlows, batteryL
     const rb = find(b);
     if (ra !== rb) parent[rb] = ra;
   };
-
   for (let i = 0; i < batteryCount - 1; i += 1) {
     if (batteryLinks[i]) union(i, i + 1);
   }
-
   if (bridgedPorts) {
     for (let inv = 0; inv < inverterCount; inv += 1) {
       const connected = [];
       for (let bat = 0; bat < batteryCount; bat += 1) {
-        if ((directFlows[inv]?.[bat] ?? 0) > 0) connected.push(bat);
+        if (((directFlows[inv] || [])[bat] || 0) > 0) connected.push(bat);
       }
       if (connected.length > 1) {
         const first = connected[0];
@@ -195,32 +200,27 @@ function buildEffectiveGroups(inverterCount, batteryCount, directFlows, batteryL
       }
     }
   }
-
   const map = new Map();
   for (let i = 0; i < batteryCount; i += 1) {
     const root = find(i);
     if (!map.has(root)) map.set(root, []);
     map.get(root).push(i);
   }
-
   return Array.from(map.values())
     .map((group) => group.sort((a, b) => a - b))
     .sort((a, b) => a[0] - b[0]);
 }
-
 function inferGlobalShareMode(groupCount) {
   return groupCount === 1 ? "share" : "do_not_share";
 }
-
 function getGroupTouchedInverters(indices, inverterCount, directFlows) {
   const touched = [];
   for (let inv = 0; inv < inverterCount; inv += 1) {
-    const touches = indices.some((batteryIndex) => (directFlows[inv]?.[batteryIndex] ?? 0) > 0);
+    const touches = indices.some((batteryIndex) => (((directFlows[inv] || [])[batteryIndex]) || 0) > 0);
     if (touches) touched.push(inv);
   }
   return touched;
 }
-
 function hasTrueMixedShareDoNotShareTopology(effectiveGroups, inverterCount, directFlows) {
   if (effectiveGroups.length <= 1) return false;
   const sharedAcrossMultipleInverters = effectiveGroups.some((group) => {
@@ -230,119 +230,43 @@ function hasTrueMixedShareDoNotShareTopology(effectiveGroups, inverterCount, dir
   });
   return sharedAcrossMultipleInverters && effectiveGroups.length > 1;
 }
-
 function buildCommunicationGroups(inverterCount, batteryCount, directFlows, batteryLinks, bridgedPorts) {
   const effectiveGroups = buildEffectiveGroups(inverterCount, batteryCount, directFlows, batteryLinks, bridgedPorts);
   return effectiveGroups.map((indices) => {
     let masterInverter = -1;
     const touchedInverters = [];
     for (let inv = 0; inv < inverterCount; inv += 1) {
-      const touches = indices.some((batteryIndex) => (directFlows[inv]?.[batteryIndex] ?? 0) > 0);
+      const touches = indices.some((batteryIndex) => (((directFlows[inv] || [])[batteryIndex]) || 0) > 0);
       if (touches) {
         if (masterInverter === -1) masterInverter = inv;
         touchedInverters.push(inv);
       }
     }
-
+    const reason =
+      indices.length > 1 && bridgedPorts && touchedInverters.length === 1
+        ? "bridged_inverter_bus"
+        : indices.length > 1
+        ? "shared_group"
+        : "single_branch";
     return {
       inverterIndex: masterInverter,
       batteries: indices.slice(),
       touchedInverters,
-      reason:
-        indices.length > 1 && bridgedPorts && touchedInverters.length === 1
-          ? "bridged_inverter_bus"
-          : indices.length > 1
-            ? "shared_group"
-            : "single_branch",
+      reason,
     };
   });
 }
-
-function getGroupBounds(batteries, batteryPositions) {
-  const xs = batteries.map((index) => batteryPositions[index].x + 64);
-  return {
-    centerX: xs.reduce((sum, value) => sum + value, 0) / xs.length,
-    minX: Math.min(...xs),
-    maxX: Math.max(...xs),
-  };
+function getGroupBoundsCenter(indices, batteryPositions) {
+  const xs = indices.map((index) => batteryPositions[index].x + 64);
+  return xs.reduce((sum, value) => sum + value, 0) / xs.length;
 }
 
-function MiniBadge({ type, children }) {
-  const style = type === "good" ? styles.goodBadge : type === "bad" ? styles.badBadge : type === "warn" ? styles.warnBadge : styles.badge;
-  return <span style={style}>{children}</span>;
-}
-
-function Section({ title, open = false, children }) {
-  return (
-    <details open={open} style={styles.section}>
-      <summary style={styles.summary}>{title}</summary>
-      {children}
-    </details>
-  );
-}
-
-function ControlButton({ onClick, children, disabled = false, active = false }) {
-  return (
-    <button onClick={onClick} disabled={disabled} style={{ ...styles.button, ...(active ? styles.activeButton : {}), ...(disabled ? styles.buttonDisabled : {}) }}>
-      {children}
-    </button>
-  );
-}
-
-function ToggleButton({ on, onClick }) {
-  return <button onClick={onClick} style={on ? styles.toggleOn : styles.toggleOff}>{on ? "Connected" : "Open"}</button>;
-}
-
-function Legend() {
-  return (
-    <div style={styles.legend}>
-      <div style={styles.legendItem}><div style={styles.swatchBlack} /><span>Power cable</span></div>
-      <div style={styles.legendItem}><div style={styles.swatchBlue} /><span>Battery & inverter communication</span></div>
-      <div style={styles.legendItem}><div style={styles.swatchMustard} /><span>Inverter-to-inverter communication</span></div>
-    </div>
-  );
-}
-
-function StructuredObservations({ results }) {
-  const topology = [];
-  const groups = [];
-  const communication = [];
-  const general = [...results.inverterLimitWarnings];
-
-  results.observations.forEach((line) => {
-    if (line.includes("Share Battery topology confirmed") || line.includes("Do Not Share Battery")) {
-      topology.push(line);
-    } else if (/^Group \d+:/.test(line)) {
-      groups.push(line);
-    } else if (line.includes("Communication grouped") || line.includes("Shared communication group") || line.includes("Single inverter with multiple batteries")) {
-      communication.push(line);
-    } else {
-      general.push(line);
-    }
-  });
-
-  const listStyle = { margin: 0, paddingLeft: 20 };
-  const spacedListStyle = { marginTop: 10, paddingLeft: 20 };
-  const itemStyle = { marginBottom: 8 };
-  const nestedStyle = { marginTop: 6, marginLeft: 26, paddingLeft: 18 };
-
-  return (
-    <div style={{ fontSize: 13, color: "#78350f", lineHeight: 1.6 }}>
-      {topology.length > 0 && <ul style={listStyle}>{topology.map((line, i) => <li key={`topology-${i}`} style={itemStyle}>{line}</li>)}</ul>}
-      {groups.length > 0 && <ul style={topology.length > 0 ? spacedListStyle : listStyle}>{groups.map((line, i) => <li key={`group-${i}`} style={itemStyle}>{line}</li>)}</ul>}
-      {communication.length > 0 && <ul style={nestedStyle}>{communication.map((line, i) => <li key={`comm-${i}`} style={{ marginBottom: 6, listStyleType: "circle" }}>{line}</li>)}</ul>}
-      {results.advisories.length > 0 && <ul style={topology.length > 0 || groups.length > 0 || communication.length > 0 ? spacedListStyle : listStyle}>{results.advisories.map((line, i) => <li key={`adv-${i}`} style={itemStyle}>{line}</li>)}</ul>}
-      {general.length > 0 && <ul style={topology.length > 0 || groups.length > 0 || communication.length > 0 || results.advisories.length > 0 ? spacedListStyle : listStyle}>{general.map((line, i) => <li key={`general-${i}`} style={itemStyle}>{line}</li>)}</ul>}
-    </div>
-  );
-}
-
+// === Analyzer (ported as-is) ===
 function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, batteryConnectionTypes, inverterModelKey, batteryLayoutMode) {
-  const model = INVERTER_MODELS[inverterModelKey] ?? { current: DEFAULT_INVERTER_CURRENT, maxPorts: 2, bridgedPorts: false, label: "Custom" };
+  const model = INVERTER_MODELS[inverterModelKey] || INVERTER_MODELS.envy_duo_21_envy_12kw;
   const inverterOutputCurrent = model.current;
   const maxPorts = model.maxPorts;
   const bridgedPorts = model.bridgedPorts;
-
   const inverterNames = names("I", inverterCount);
   const batteryNames = names("B", batteryCount);
   const directFlows = Array.from({ length: inverterCount }, () => Array(batteryCount).fill(0));
@@ -356,18 +280,21 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
   const risks = [];
   const alarms = [];
   const advisories = [];
-
   inverterNames.forEach((name, i) => {
     const targets = [];
     for (let j = 0; j < batteryCount; j += 1) {
-      if (connections[i]?.[j]) targets.push(j);
+      if ((connections[i] || [])[j]) targets.push(j);
     }
     if (targets.length === 0) {
-      observations.push(`${name} is not connected (no current flow).`);
+      observations.push(name + " is not connected (no current flow).");
       return;
     }
     if (targets.length > maxPorts) {
-      inverterLimitWarnings.push(`${name} has ${targets.length} outgoing conductors selected. Only ${maxPorts} conductor${maxPorts === 1 ? "" : "s"} per inverter are allowed for the selected model; the first ${maxPorts} ${maxPorts === 1 ? "is" : "are"} used in the model.`);
+      inverterLimitWarnings.push(
+        name + " has " + targets.length + " outgoing conductors selected. Only " + maxPorts +
+        " conductor" + (maxPorts === 1 ? "" : "s") + " per inverter are allowed for the selected model; the first " +
+        maxPorts + " " + (maxPorts === 1 ? "is" : "are") + " used in the model."
+      );
     }
     const activeTargets = targets.slice(0, maxPorts);
     const share = activeTargets.length > 0 ? inverterOutputCurrent / activeTargets.length : 0;
@@ -376,14 +303,14 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
       nodeInflow[batteryIndex] += share;
     });
   });
-
   const batteryLinkGroups = buildBatteryLinkGroups(batteryCount, batteryLinks);
   const effectiveGroups = buildEffectiveGroups(inverterCount, batteryCount, directFlows, batteryLinks, bridgedPorts);
-  const batteryGroupLabels = effectiveGroups.map((indices, groupIndex) => `Group ${groupIndex + 1}: ${indices.map((idx) => batteryNames[idx]).join(", ")}`);
+  const batteryGroupLabels = effectiveGroups.map((indices, groupIndex) =>
+    "Group " + (groupIndex + 1) + ": " + indices.map((idx) => batteryNames[idx]).join(", ")
+  );
   const globalShareMode = inferGlobalShareMode(effectiveGroups.length);
   const hasMixedShareDoNotShareTopology = hasTrueMixedShareDoNotShareTopology(effectiveGroups, inverterCount, directFlows);
   const communicationGroups = buildCommunicationGroups(inverterCount, batteryCount, directFlows, batteryLinks, bridgedPorts);
-
   if (globalShareMode === "share") {
     observations.push("All batteries are part of one effective shared battery network. Share Battery topology confirmed.");
   } else {
@@ -391,45 +318,22 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
     advisories.push("Share Battery functionality depends on one continuous shared path across all batteries.");
     advisories.push("That shared path can be created by battery conductors and, on bridged-port inverter models, through the inverter battery bus.");
   }
-
   if (hasMixedShareDoNotShareTopology) {
     alarms.push("Mixed Share / Do Not Share battery topology detected. This system combines a shared battery group that spans multiple inverters with other isolated battery groups.");
     advisories.push("Choose one battery topology approach for the whole system: either all batteries participate in one shared network, or all battery groups remain isolated.");
   }
-
-  if (bridgedPorts) {
-    advisories.push("For Envy Duo 21 / Envy 12kW, the two inverter battery ports are treated as internally bridged.");
-  } else {
-    advisories.push("For Envy 8kW and Envy 10kW, battery ports are not internally bridged.");
-  }
-
+  advisories.push(bridgedPorts
+    ? "For Envy Duo 21 / Envy 12kW, the two inverter battery ports are treated as internally bridged."
+    : "For Envy 8kW and Envy 10kW, battery ports are not internally bridged.");
   if (batteryLinkGroups.length > 1 && effectiveGroups.length === 1 && bridgedPorts) {
     observations.push("Separated battery-conductor groups are being electrically shared through bridged inverter battery ports.");
   }
-
-  if (globalShareMode === "share" && batteryCount >= 2) {
-    const leftEndTotalConnectionPoints = connections.reduce((sum, row) => sum + (row?.[0] ? 1 : 0), 0) + (batteryCount > 1 && batteryLinks[0] ? 1 : 0);
-    const rightIndex = batteryCount - 1;
-    const rightEndTotalConnectionPoints = connections.reduce((sum, row) => sum + (row?.[rightIndex] ? 1 : 0), 0) + (batteryCount > 1 && batteryLinks[rightIndex - 1] ? 1 : 0);
-
-    if (leftEndTotalConnectionPoints <= 1) {
-      advisories.push(`Cost optimization: ${batteryNames[0]} can use eWay Lite because this end battery has no more than one total connection point.`);
-    }
-    if (rightEndTotalConnectionPoints <= 1) {
-      advisories.push(`Cost optimization: ${batteryNames[rightIndex]} can use eWay Lite because this end battery has no more than one total connection point.`);
-    }
-  }
-
   batteryGroupLabels.forEach((label) => observations.push(label));
-
   effectiveGroups.forEach((indices) => {
     const totalInflow = indices.reduce((sum, idx) => sum + nodeInflow[idx], 0);
     const sharedLoad = indices.length === 1 ? totalInflow : totalInflow / indices.length;
-    indices.forEach((idx) => {
-      finalBatteryLoad[idx] = sharedLoad;
-    });
+    indices.forEach((idx) => { finalBatteryLoad[idx] = sharedLoad; });
   });
-
   batteryLinkGroups.forEach((indices) => {
     let prefixImbalance = 0;
     const totalInflow = indices.reduce((sum, idx) => sum + nodeInflow[idx], 0);
@@ -440,46 +344,34 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
       linkTransfers[left] = { net: prefixImbalance };
     }
   });
-
-  communicationGroups.forEach(({ inverterIndex, batteries, reason }) => {
+  communicationGroups.forEach((cg) => {
+    const inverterIndex = cg.inverterIndex;
+    const batteries = cg.batteries;
+    const reason = cg.reason;
     if (batteries.length <= 1) return;
     batteries.slice(0, -1).forEach((batteryIndex) => {
       autoCommBatteryLinks[batteryIndex] = true;
     });
     if (inverterIndex !== -1) {
       autoCommConnections[inverterIndex][batteries[0]] = true;
-      if (reason === "bridged_inverter_bus") {
-        observations.push(`Communication grouped through bridged inverter battery ports: ${batteryNames[batteries[0]]} is primary and ${batteryNames[batteries[batteries.length - 1]]} follows through the inverter bus.`);
-      } else {
-        observations.push(`Shared communication group detected: ${batteryNames[batteries[0]]} is primary and ${batteryNames[batteries[batteries.length - 1]]} follows in the same effective group.`);
-      }
+      observations.push(
+        reason === "bridged_inverter_bus"
+          ? "Communication grouped through bridged inverter battery ports: " + batteryNames[batteries[0]] + " is primary and " + batteryNames[batteries[batteries.length - 1]] + " follows through the inverter bus."
+          : "Shared communication group detected: " + batteryNames[batteries[0]] + " is primary and " + batteryNames[batteries[batteries.length - 1]] + " follows in the same effective group."
+      );
     }
   });
-
   effectiveGroups.forEach((indices) => {
     if (indices.length !== 1) return;
     const batteryIndex = indices[0];
     for (let inv = 0; inv < inverterCount; inv += 1) {
-      if ((directFlows[inv]?.[batteryIndex] ?? 0) > 0) autoCommConnections[inv][batteryIndex] = true;
+      if (((directFlows[inv] || [])[batteryIndex] || 0) > 0) autoCommConnections[inv][batteryIndex] = true;
     }
   });
-
-  const connectedBatteryIndices = batteryNames.map((_, idx) => idx).filter((idx) => nodeInflow[idx] > 0);
-  if (inverterCount === 1 && connectedBatteryIndices.length > 1 && !batteryLinks.some(Boolean)) {
-    connectedBatteryIndices.slice(0, -1).forEach((batteryIndex) => {
-      autoCommBatteryLinks[batteryIndex] = true;
-    });
-    connectedBatteryIndices.forEach((batteryIndex, index) => {
-      autoCommConnections[0][batteryIndex] = index === 0;
-    });
-    observations.push("Single inverter with multiple batteries detected: battery-to-battery communication chain added automatically.");
-  }
-
   const batteryStatus = batteryNames.map((name, i) => {
-    const appliedType = getEffectiveBatteryConnectionType(i, batteryConnectionTypes[i] ?? "three_point_terminal", batteryLayoutMode);
+    const appliedType = getEffectiveBatteryConnectionType(i, batteryConnectionTypes[i] || "three_point_terminal", batteryLayoutMode);
     const config = getConnectionPointConfig(appliedType);
     const isBottomFrontStackBattery = batteryLayoutMode === "front_stacking" && isFrontStackBottomBattery(i, batteryLayoutMode);
-
     if (isBottomFrontStackBattery) {
       const incomingNodeCurrent = finalBatteryLoad[i];
       const maxNodeCurrent = finalBatteryLoad[i];
@@ -488,38 +380,19 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
       const nodeOverload = incomingNodeCurrent > config.nodeRating + 1e-9;
       const terminalOveruse = totalConnectionPointsUsed > config.terminalCount;
       const inactive = finalBatteryLoad[i] <= 1e-9;
-
-      if (batteryOverload) risks.push(`${name} absorbs ${formatAmps(finalBatteryLoad[i])} A, which is above its 250 A battery maximum.`);
-      if (nodeOverload) risks.push(`${name} connection point incoming current is ${formatAmps(incomingNodeCurrent)} A, which is above its ${formatAmps(config.nodeRating)} A connection-point rating.`);
-      if (terminalOveruse) risks.push(`${name} uses ${totalConnectionPointsUsed} power-conductor landings, but its selected connection point allows only ${config.terminalCount}. Communication cabling is treated separately and is not counted as a power landing.`);
-      if (inactive) observations.push(`${name} is not absorbing current.`);
-
-      return {
-        name,
-        finalLoad: finalBatteryLoad[i],
-        incomingNodeCurrent,
-        maxNodeCurrent,
-        config,
-        totalConnectionPointsUsed,
-        overloaded: batteryOverload || nodeOverload || terminalOveruse,
-        inactive,
-      };
+      if (batteryOverload) risks.push(name + " absorbs " + formatAmps(finalBatteryLoad[i]) + " A, which is above its 250 A battery maximum.");
+      if (nodeOverload) risks.push(name + " connection point incoming current is " + formatAmps(incomingNodeCurrent) + " A, which is above its " + formatAmps(config.nodeRating) + " A connection-point rating.");
+      if (terminalOveruse) risks.push(name + " uses " + totalConnectionPointsUsed + " power-conductor landings, but its selected connection point allows only " + config.terminalCount + ". Communication cabling is treated separately and is not counted as a power landing.");
+      return { name, finalLoad: finalBatteryLoad[i], incomingNodeCurrent, maxNodeCurrent, config, totalConnectionPointsUsed, overloaded: batteryOverload || nodeOverload || terminalOveruse, inactive };
     }
-
-    const directConnectionCount = connections.reduce((sum, row) => sum + (row?.[i] ? 1 : 0), 0);
+    const directConnectionCount = connections.reduce((sum, row) => sum + ((row || [])[i] ? 1 : 0), 0);
     const leftEnabled = i > 0 && batteryLinks[i - 1];
     const rightEnabled = i < batteryCount - 1 && batteryLinks[i];
-    const leftIncoming = leftEnabled ? Math.max(0, linkTransfers[i - 1]?.net ?? 0) : 0;
-    const rightIncoming = rightEnabled ? Math.max(0, -(linkTransfers[i]?.net ?? 0)) : 0;
-    const leftOutgoing = leftEnabled ? Math.max(0, -(linkTransfers[i - 1]?.net ?? 0)) : 0;
-    const rightOutgoing = rightEnabled ? Math.max(0, linkTransfers[i]?.net ?? 0) : 0;
-    const totalConnectionPointsUsed = (() => {
-      if (batteryLayoutMode === "front_stacking" && globalShareMode === "share" && isFrontStackBottomBattery(i, batteryLayoutMode)) {
-        const hasPowerFeedFromAbove = leftEnabled || rightEnabled;
-        return hasPowerFeedFromAbove ? 1 : directConnectionCount;
-      }
-      return directConnectionCount + (leftEnabled ? 1 : 0) + (rightEnabled ? 1 : 0);
-    })();
+    const leftIncoming = leftEnabled ? Math.max(0, (linkTransfers[i - 1] || {}).net || 0) : 0;
+    const rightIncoming = rightEnabled ? Math.max(0, -((linkTransfers[i] || {}).net || 0)) : 0;
+    const leftOutgoing = leftEnabled ? Math.max(0, -((linkTransfers[i - 1] || {}).net || 0)) : 0;
+    const rightOutgoing = rightEnabled ? Math.max(0, (linkTransfers[i] || {}).net || 0) : 0;
+    const totalConnectionPointsUsed = directConnectionCount + (leftEnabled ? 1 : 0) + (rightEnabled ? 1 : 0);
     const incomingNodeCurrent = nodeInflow[i] + leftIncoming + rightIncoming;
     const outgoingNodeCurrent = leftOutgoing + rightOutgoing + finalBatteryLoad[i];
     const maxNodeCurrent = Math.max(incomingNodeCurrent, outgoingNodeCurrent);
@@ -527,62 +400,39 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
     const nodeOverload = incomingNodeCurrent > config.nodeRating + 1e-9;
     const terminalOveruse = totalConnectionPointsUsed > config.terminalCount;
     const inactive = nodeInflow[i] <= 1e-9 && finalBatteryLoad[i] <= 1e-9;
-
-    if (batteryOverload) risks.push(`${name} absorbs ${formatAmps(finalBatteryLoad[i])} A, which is above its 250 A battery maximum.`);
-    if (nodeOverload) risks.push(`${name} connection point incoming current is ${formatAmps(incomingNodeCurrent)} A, which is above its ${formatAmps(config.nodeRating)} A connection-point rating.`);
-    if (terminalOveruse) risks.push(`${name} uses ${totalConnectionPointsUsed} power-conductor landings, but its selected connection point allows only ${config.terminalCount}. Communication cabling is treated separately and is not counted as a power landing.`);
-    if (inactive) observations.push(`${name} is not absorbing current.`);
-
-    return {
-      name,
-      finalLoad: finalBatteryLoad[i],
-      incomingNodeCurrent,
-      maxNodeCurrent,
-      config,
-      totalConnectionPointsUsed,
-      overloaded: batteryOverload || nodeOverload || terminalOveruse,
-      inactive,
-    };
+    if (batteryOverload) risks.push(name + " absorbs " + formatAmps(finalBatteryLoad[i]) + " A, which is above its 250 A battery maximum.");
+    if (nodeOverload) risks.push(name + " connection point incoming current is " + formatAmps(incomingNodeCurrent) + " A, which is above its " + formatAmps(config.nodeRating) + " A connection-point rating.");
+    if (terminalOveruse) risks.push(name + " uses " + totalConnectionPointsUsed + " power-conductor landings, but its selected connection point allows only " + config.terminalCount + ". Communication cabling is treated separately and is not counted as a power landing.");
+    return { name, finalLoad: finalBatteryLoad[i], incomingNodeCurrent, maxNodeCurrent, config, totalConnectionPointsUsed, overloaded: batteryOverload || nodeOverload || terminalOveruse, inactive };
   });
-
   if (batteryLayoutMode === "front_stacking" && globalShareMode === "share") {
     const columnCount = getFrontStackColumnCount(batteryCount);
-
     for (let column = 0; column < columnCount; column += 1) {
       const topIndex = getTopBatteryIndexForColumn(column);
       const bottomIndex = getBottomBatteryIndexForColumn(column, batteryCount);
       if (bottomIndex === -1) continue;
-      const current = Math.abs(finalBatteryLoad[bottomIndex] ?? 0);
-      if (current > CONDUCTOR_RATING + 1e-9) {
-        risks.push(`${batteryNames[topIndex]} ↔ ${batteryNames[bottomIndex]} carries ${formatAmps(current)} A, which is above its 250 A conductor rating.`);
-      }
+      const current = Math.abs(finalBatteryLoad[bottomIndex] || 0);
+      if (current > CONDUCTOR_RATING + 1e-9) risks.push(batteryNames[topIndex] + " ↔ " + batteryNames[bottomIndex] + " carries " + formatAmps(current) + " A, which is above its 250 A conductor rating.");
     }
-
     for (let column = 0; column < columnCount - 1; column += 1) {
       const leftTopIndex = getTopBatteryIndexForColumn(column);
       const rightTopIndex = getTopBatteryIndexForColumn(column + 1);
       if (rightTopIndex >= batteryCount) continue;
-      const transferIndex = getLastBatteryIndexForColumn(column, batteryCount);
-      const current = Math.abs(linkTransfers[transferIndex]?.net ?? 0);
-      if (current > CONDUCTOR_RATING + 1e-9) {
-        risks.push(`${batteryNames[leftTopIndex]} ↔ ${batteryNames[rightTopIndex]} carries ${formatAmps(current)} A, which is above its 250 A conductor rating.`);
-      }
+      const transferIndex = Math.min(linkTransfers.length - 1, leftTopIndex + 1);
+      const current = Math.abs((linkTransfers[transferIndex] || {}).net || 0);
+      if (current > CONDUCTOR_RATING + 1e-9) risks.push(batteryNames[leftTopIndex] + " ↔ " + batteryNames[rightTopIndex] + " carries " + formatAmps(current) + " A, which is above its 250 A conductor rating.");
     }
   } else {
     linkTransfers.forEach((transfer, i) => {
       const current = Math.abs(transfer.net);
-      if (current > CONDUCTOR_RATING + 1e-9) {
-        risks.push(`${batteryNames[i]} ↔ ${batteryNames[i + 1]} carries ${formatAmps(current)} A, which is above its 250 A conductor rating.`);
-      }
+      if (current > CONDUCTOR_RATING + 1e-9) risks.push(batteryNames[i] + " ↔ " + batteryNames[i + 1] + " carries " + formatAmps(current) + " A, which is above its 250 A conductor rating.");
     });
   }
-
   const totalInput = nodeInflow.reduce((a, b) => a + b, 0);
   const batteryCapacity = batteryCount * BATTERY_MAX;
   if (totalInput > batteryCapacity + 1e-9) {
-    risks.push(`Total inverter current is ${formatAmps(totalInput)} A, while total battery capacity is ${formatAmps(batteryCapacity)} A.`);
+    risks.push("Total inverter current is " + formatAmps(totalInput) + " A, while total battery capacity is " + formatAmps(batteryCapacity) + " A.");
   }
-
   return {
     globalShareMode,
     batteryGroups: effectiveGroups,
@@ -606,268 +456,253 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
   };
 }
 
-function runSelfChecks() {
+// === Self-checks ===
+(function runSelfChecks() {
   const groupsA = buildEffectiveGroups(2, 3, [[250, 0, 0], [0, 250, 0]], [false, true], false);
   const groupsB = buildEffectiveGroups(2, 3, [[125, 125, 0], [0, 250, 0]], [false, true], true);
   if (groupsA.length !== 2) throw new Error("Self-check failed: expected two effective groups without bridge sharing.");
   if (groupsB.length !== 1) throw new Error("Self-check failed: expected one effective group with bridged inverter sharing.");
-
-  const frontStackShareConnections = matrix(6, 14, false);
-  [0, 2, 4, 6, 8, 10].forEach((batteryIndex, inverterIndex) => {
-    frontStackShareConnections[inverterIndex][batteryIndex] = true;
-  });
-  const frontStackShareResult = analyzeSystem(
-    6,
-    14,
-    frontStackShareConnections,
-    Array(13).fill(true),
-    Array(14).fill("three_point_terminal"),
-    "envy_duo_21_envy_12kw",
-    "front_stacking"
-  );
-  if (frontStackShareResult.risks.length !== 0) {
-    throw new Error("Self-check failed: front-stacking shared layout should not report false conductor overloads for the 6 inverter / 14 battery centered pattern.");
+  const proportionalGroups = getFrontStackGroupsByBatteryCount(2, 10);
+  if (proportionalGroups[0].join(",") !== "0,1,2,3,4" || proportionalGroups[1].join(",") !== "5,6,7,8,9") {
+    throw new Error("Self-check failed: front-stacking do-not-share groups should split proportionally by battery count.");
   }
+})();
+
+// === State ===
+const state = {
+  inverterCount: 2,
+  batteryCount: 3,
+  connections: [[true, false, false], [false, true, false]],
+  batteryLinks: [false, false],
+  batteryConnectionTypes: ["three_point_terminal", "three_point_terminal", "three_point_terminal"],
+  inverterModel: "envy_duo_21_envy_12kw",
+  isFigureFullscreen: false,
+  batteryLayoutMode: "side_by_side",
+  configurationMode: "none",
+};
+
+// Track open/closed state of <details> sections so re-renders don't collapse them.
+const detailsOpen = {
+  step1: true,
+  step2: true,
+  autoConfig: true,
+  manualConfig: false,
+  manualConductors: false,
+  manualBattConn: false,
+  manualBatteryLinks: false,
+};
+
+function setState(patch) {
+  Object.assign(state, patch);
+  scheduleRender();
 }
 
-runSelfChecks();
+// === Actions (mutate state and re-render) ===
+function resizeSystem(newInv, newBat) {
+  const inv = clampCount(newInv, MAX_INVERTER_COUNT);
+  const bat = clampCount(newBat, MAX_BATTERY_COUNT);
+  const prevConn = state.connections;
+  const nextConn = matrix(inv, bat, false);
+  for (let i = 0; i < Math.min(inv, prevConn.length); i += 1) {
+    for (let j = 0; j < Math.min(bat, prevConn[i].length); j += 1) nextConn[i][j] = prevConn[i][j];
+  }
+  const prevLinks = state.batteryLinks;
+  const nextLinks = Array(Math.max(0, bat - 1)).fill(false);
+  for (let i = 0; i < Math.min(nextLinks.length, prevLinks.length); i += 1) nextLinks[i] = prevLinks[i];
+  const prevTypes = state.batteryConnectionTypes;
+  const nextTypes = Array(bat).fill("three_point_terminal");
+  for (let i = 0; i < Math.min(bat, prevTypes.length); i += 1) nextTypes[i] = prevTypes[i];
+  state.inverterCount = inv;
+  state.batteryCount = bat;
+  state.connections = nextConn;
+  state.batteryLinks = nextLinks;
+  state.batteryConnectionTypes = nextTypes;
+  reapplyAutoConfigIfNeeded();
+  scheduleRender();
+}
 
-function ElectricalBehaviorModel() {
-  const [inverterCount, setInverterCount] = useState(2);
-  const [batteryCount, setBatteryCount] = useState(3);
-  const [connections, setConnections] = useState([[true, false, false], [false, true, false]]);
-  const [batteryLinks, setBatteryLinks] = useState([false, false]);
-  const [batteryConnectionTypes, setBatteryConnectionTypes] = useState(["three_point_terminal", "three_point_terminal", "three_point_terminal"]);
-  const [inverterModel, setInverterModel] = useState("envy_duo_21_envy_12kw");
-  const [isFigureFullscreen, setIsFigureFullscreen] = useState(false);
-  const [batteryLayoutMode, setBatteryLayoutMode] = useState("side_by_side");
-  const [configurationMode, setConfigurationMode] = useState("none");
+function toggleConnection(i, j) {
+  state.configurationMode = "none";
+  state.connections = state.connections.map((row, r) => row.map((cell, c) => (r === i && c === j ? !cell : cell)));
+  scheduleRender();
+}
 
-  const resizeSystem = (newInv, newBat) => {
-    const inv = clampCount(newInv, MAX_INVERTER_COUNT);
-    const bat = clampCount(newBat, MAX_BATTERY_COUNT);
-    setInverterCount(inv);
-    setBatteryCount(bat);
-    setConnections((prev) => {
-      const next = matrix(inv, bat, false);
-      for (let i = 0; i < Math.min(inv, prev.length); i += 1) {
-        for (let j = 0; j < Math.min(bat, prev[i].length); j += 1) next[i][j] = prev[i][j];
-      }
-      return next;
+function toggleBatteryLink(idx) {
+  state.configurationMode = "none";
+  state.batteryLinks = state.batteryLinks.map((value, i) => (i === idx ? !value : value));
+  scheduleRender();
+}
+
+function changeBatteryConnectionType(idx, value) {
+  state.configurationMode = "none";
+  state.batteryConnectionTypes = state.batteryConnectionTypes.map((item, i) => (i === idx ? value : item));
+  scheduleRender();
+}
+
+function clearAll() {
+  state.configurationMode = "none";
+  state.connections = matrix(state.inverterCount, state.batteryCount, false);
+  state.batteryLinks = Array(Math.max(0, state.batteryCount - 1)).fill(false);
+  state.batteryConnectionTypes = Array(state.batteryCount).fill("three_point_terminal");
+  scheduleRender();
+}
+
+function applyShareConfiguration(layoutModeOverride) {
+  const inv = state.inverterCount, bat = state.batteryCount;
+  const nextConnections = matrix(inv, bat, false);
+  const nextBatteryLinks = Array(Math.max(0, bat - 1)).fill(true);
+  const nextBatteryConnectionTypes = Array(bat).fill("three_point_terminal");
+  if (layoutModeOverride === "front_stacking") {
+    const columnCount = getFrontStackColumnCount(bat);
+    const landingCount = Math.min(inv, columnCount);
+    const centeredStartColumn = Math.max(0, Math.floor((columnCount - landingCount) / 2));
+    for (let column = 0; column < columnCount; column += 1) {
+      const bottomIndex = getBottomBatteryIndexForColumn(column, bat);
+      if (bottomIndex !== -1) nextBatteryConnectionTypes[bottomIndex] = "single_point_terminal";
+    }
+    for (let i = 0; i < landingCount; i += 1) {
+      const topBatteryIndex = getTopBatteryIndexForColumn(centeredStartColumn + i);
+      if (topBatteryIndex < bat) nextConnections[i][topBatteryIndex] = true;
+    }
+  } else {
+    const centeredStartIndex = bat >= inv ? Math.floor((bat - inv) / 2) : 0;
+    const used = new Set();
+    for (let i = 0; i < inv; i += 1) {
+      let targetIndex = bat >= inv ? centeredStartIndex + Math.min(i, bat - 1) : Math.floor((i * bat) / Math.max(1, inv));
+      while (used.has(targetIndex) && targetIndex < bat - 1) targetIndex += 1;
+      used.add(targetIndex);
+      nextConnections[i][targetIndex] = true;
+    }
+  }
+  state.connections = nextConnections;
+  state.batteryLinks = nextBatteryLinks;
+  state.batteryConnectionTypes = nextBatteryConnectionTypes;
+}
+
+function applyDoNotShareConfiguration(layoutModeOverride) {
+  const inv = state.inverterCount, bat = state.batteryCount;
+  const nextConnections = matrix(inv, bat, false);
+  const nextBatteryLinks = Array(Math.max(0, bat - 1)).fill(false);
+  const nextBatteryConnectionTypes = Array(bat).fill("three_point_terminal");
+  const maxPorts = (INVERTER_MODELS[state.inverterModel] || {}).maxPorts || 1;
+  if (layoutModeOverride === "front_stacking") {
+    for (let column = 0; column < getFrontStackColumnCount(bat); column += 1) {
+      const bottomIndex = getBottomBatteryIndexForColumn(column, bat);
+      if (bottomIndex !== -1) nextBatteryConnectionTypes[bottomIndex] = "single_point_terminal";
+    }
+    const groups = getFrontStackGroupsByBatteryCount(inv, bat);
+    groups.forEach((group, i) => {
+      group.slice(0, -1).forEach((batteryIndex) => {
+        if (batteryIndex < bat - 1) nextBatteryLinks[batteryIndex] = true;
+      });
+      const topCandidates = group.filter((batteryIndex) => batteryIndex % 2 === 0);
+      const directAssignments = Math.min(topCandidates.length, maxPorts);
+      const assignmentStart = topCandidates.length > directAssignments ? Math.floor((topCandidates.length - directAssignments) / 2) : 0;
+      topCandidates.slice(assignmentStart, assignmentStart + directAssignments).forEach((batteryIndex) => {
+        nextConnections[i][batteryIndex] = true;
+      });
     });
-    setBatteryLinks((prev) => {
-      const next = Array(Math.max(0, bat - 1)).fill(false);
-      for (let i = 0; i < Math.min(next.length, prev.length); i += 1) next[i] = prev[i];
-      return next;
-    });
-    setBatteryConnectionTypes((prev) => {
-      const next = Array(bat).fill("three_point_terminal");
-      for (let i = 0; i < Math.min(bat, prev.length); i += 1) next[i] = prev[i];
-      return next;
-    });
-  };
-
-  const toggleConnection = (i, j) => {
-    setConnections((prev) => prev.map((row, r) => row.map((cell, c) => (r === i && c === j ? !cell : cell))));
-  };
-
-  const toggleBatteryLink = (idx) => {
-    setBatteryLinks((prev) => prev.map((value, i) => (i === idx ? !value : value)));
-  };
-
-  const changeBatteryConnectionType = (idx, value) => {
-    setBatteryConnectionTypes((prev) => prev.map((item, i) => (i === idx ? value : item)));
-  };
-
-  const clearAll = () => {
-    setConfigurationMode("none");
-    setConnections(matrix(inverterCount, batteryCount, false));
-    setBatteryLinks(Array(Math.max(0, batteryCount - 1)).fill(false));
-    setBatteryConnectionTypes(Array(batteryCount).fill("three_point_terminal"));
-  };
-
-  const applyShareConfiguration = (layoutModeOverride = batteryLayoutMode) => {
-    const nextConnections = matrix(inverterCount, batteryCount, false);
-    const nextBatteryLinks = Array(Math.max(0, batteryCount - 1)).fill(true);
-    const nextBatteryConnectionTypes = Array(batteryCount).fill("three_point_terminal");
-
-    if (layoutModeOverride === "front_stacking") {
-      const columnCount = getFrontStackColumnCount(batteryCount);
-      const landingCount = Math.min(inverterCount, columnCount);
-      const centeredStartColumn = Math.max(0, Math.floor((columnCount - landingCount) / 2));
-
-      for (let column = 0; column < columnCount; column += 1) {
-        const bottomIndex = getBottomBatteryIndexForColumn(column, batteryCount);
-        if (bottomIndex !== -1) nextBatteryConnectionTypes[bottomIndex] = "single_point_terminal";
+  } else {
+    for (let i = 0; i < inv; i += 1) {
+      const range = distributeStartAndEnd(bat, inv, i);
+      const startBattery = range[0];
+      const groupEnd = Math.min(bat, range[1]);
+      const groupSize = Math.max(1, groupEnd - startBattery);
+      const directAssignments = Math.min(groupSize, maxPorts);
+      const assignmentStart = groupSize > directAssignments ? startBattery + Math.floor((groupSize - directAssignments) / 2) : startBattery;
+      for (let offset = 0; offset < directAssignments; offset += 1) {
+        nextConnections[i][assignmentStart + offset] = true;
       }
-
-      for (let inv = 0; inv < landingCount; inv += 1) {
-        const column = centeredStartColumn + inv;
-        const topBatteryIndex = getTopBatteryIndexForColumn(column);
-        if (topBatteryIndex < batteryCount) nextConnections[inv][topBatteryIndex] = true;
-      }
-    } else if (batteryCount > 0 && inverterCount > 0) {
-      const usedBatteries = new Set();
-      const useCenteredWindow = batteryCount >= inverterCount;
-      const centeredStartIndex = useCenteredWindow ? Math.floor((batteryCount - inverterCount) / 2) : 0;
-
-      for (let inv = 0; inv < inverterCount; inv += 1) {
-        let targetIndex;
-        if (useCenteredWindow) {
-          targetIndex = centeredStartIndex + Math.min(inv, batteryCount - 1);
-        } else if (inverterCount === 1) {
-          targetIndex = 0;
-        } else {
-          targetIndex = Math.floor((inv * batteryCount) / inverterCount);
-        }
-
-        if (targetIndex > batteryCount - 1) targetIndex = batteryCount - 1;
-
-        let assignedBattery = targetIndex;
-        if (usedBatteries.has(assignedBattery)) {
-          let bestBattery = assignedBattery;
-          let bestDistance = Number.POSITIVE_INFINITY;
-          for (let bat = 0; bat < batteryCount; bat += 1) {
-            if (usedBatteries.has(bat)) continue;
-            const distance = Math.abs(bat - targetIndex);
-            if (distance < bestDistance) {
-              bestDistance = distance;
-              bestBattery = bat;
-            }
-          }
-          assignedBattery = bestBattery;
-        }
-
-        usedBatteries.add(assignedBattery);
-        nextConnections[inv][assignedBattery] = true;
+      for (let batteryIndex = startBattery; batteryIndex < groupEnd - 1; batteryIndex += 1) {
+        nextBatteryLinks[batteryIndex] = true;
       }
     }
+  }
+  state.connections = nextConnections;
+  state.batteryLinks = nextBatteryLinks;
+  state.batteryConnectionTypes = nextBatteryConnectionTypes;
+}
 
-    setConnections(nextConnections);
-    setBatteryLinks(nextBatteryLinks);
-    setBatteryConnectionTypes(nextBatteryConnectionTypes);
-  };
+function reapplyAutoConfigIfNeeded() {
+  if (state.configurationMode === "share") applyShareConfiguration(state.batteryLayoutMode);
+  else if (state.configurationMode === "do_not_share") applyDoNotShareConfiguration(state.batteryLayoutMode);
+}
 
-  const applyDoNotShareConfiguration = (layoutModeOverride = batteryLayoutMode) => {
-    const nextConnections = matrix(inverterCount, batteryCount, false);
-    const nextBatteryLinks = Array(Math.max(0, batteryCount - 1)).fill(false);
-    const nextBatteryConnectionTypes = Array(batteryCount).fill("three_point_terminal");
-    const maxPorts = INVERTER_MODELS[inverterModel]?.maxPorts ?? 1;
+function autoConfigureShareBattery() {
+  state.configurationMode = "share";
+  applyShareConfiguration(state.batteryLayoutMode);
+  scheduleRender();
+}
+function autoConfigureDoNotShareBattery() {
+  state.configurationMode = "do_not_share";
+  applyDoNotShareConfiguration(state.batteryLayoutMode);
+  scheduleRender();
+}
+function setBatteryLayoutMode(mode) {
+  state.batteryLayoutMode = mode;
+  reapplyAutoConfigIfNeeded();
+  scheduleRender();
+}
+function setInverterModel(model) {
+  state.inverterModel = model;
+  reapplyAutoConfigIfNeeded();
+  scheduleRender();
+}
 
-    if (layoutModeOverride === "front_stacking") {
-      const columnCount = getFrontStackColumnCount(batteryCount);
-      for (let column = 0; column < columnCount; column += 1) {
-        const bottomIndex = getBottomBatteryIndexForColumn(column, batteryCount);
-        if (bottomIndex !== -1) nextBatteryConnectionTypes[bottomIndex] = "single_point_terminal";
-      }
+function demoBalanced() {
+  state.configurationMode = "none";
+  state.inverterCount = 2;
+  state.batteryCount = 3;
+  state.connections = [[true, false, false], [false, true, true]];
+  state.batteryLinks = [false, true];
+  state.batteryConnectionTypes = ["three_point_terminal", "three_point_terminal", "three_point_terminal"];
+  scheduleRender();
+}
+function demoOverload() {
+  state.configurationMode = "none";
+  state.inverterCount = 3;
+  state.batteryCount = 2;
+  state.connections = [[true, false], [true, false], [true, false]];
+  state.batteryLinks = [false];
+  state.batteryConnectionTypes = ["three_point_terminal", "three_point_terminal"];
+  scheduleRender();
+}
+function demoShared() {
+  state.configurationMode = "none";
+  state.inverterCount = 2;
+  state.batteryCount = 2;
+  state.connections = [[true, false], [false, true]];
+  state.batteryLinks = [true];
+  state.batteryConnectionTypes = ["three_point_terminal", "three_point_terminal"];
+  scheduleRender();
+}
 
-      for (let inv = 0; inv < inverterCount; inv += 1) {
-        const startColumn = Math.floor((inv * columnCount) / inverterCount);
-        const endColumnExclusive = Math.floor(((inv + 1) * columnCount) / inverterCount);
-        const groupEndColumn = Math.max(startColumn + 1, endColumnExclusive);
-        const groupColumnCount = Math.max(1, groupEndColumn - startColumn);
-        const directAssignments = Math.min(groupColumnCount, maxPorts);
-        const assignmentStartColumn = groupColumnCount > directAssignments
-          ? startColumn + Math.floor((groupColumnCount - directAssignments) / 2)
-          : startColumn;
+// === Render utilities ===
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
-        for (let offset = 0; offset < directAssignments; offset += 1) {
-          const column = assignmentStartColumn + offset;
-          const topBatteryIndex = getTopBatteryIndexForColumn(column);
-          if (topBatteryIndex < batteryCount) nextConnections[inv][topBatteryIndex] = true;
-        }
+function badge(type, content) {
+  const cls = type === "good" ? "goodBadge" : type === "bad" ? "badBadge" : type === "warn" ? "warnBadge" : "badge";
+  return '<span class="' + cls + '">' + content + '</span>';
+}
 
-        for (let column = startColumn; column < groupEndColumn; column += 1) {
-          const topBatteryIndex = getTopBatteryIndexForColumn(column);
-          const bottomBatteryIndex = getBottomBatteryIndexForColumn(column, batteryCount);
-          if (bottomBatteryIndex !== -1 && topBatteryIndex < batteryCount - 1) nextBatteryLinks[topBatteryIndex] = true;
-          if (column < groupEndColumn - 1) {
-            const boundaryIndex = getLastBatteryIndexForColumn(column, batteryCount);
-            if (boundaryIndex >= 0 && boundaryIndex < batteryCount - 1) nextBatteryLinks[boundaryIndex] = true;
-          }
-        }
-      }
-    } else if (batteryCount > 0 && inverterCount > 0) {
-      for (let inv = 0; inv < inverterCount; inv += 1) {
-        const startBattery = Math.floor((inv * batteryCount) / inverterCount);
-        const endBatteryExclusive = Math.floor(((inv + 1) * batteryCount) / inverterCount);
-        const groupEnd = Math.max(startBattery + 1, endBatteryExclusive);
-        const groupSize = Math.max(1, groupEnd - startBattery);
-        const directAssignments = Math.min(groupSize, maxPorts);
-        const assignmentStart = groupSize > directAssignments ? startBattery + Math.floor((groupSize - directAssignments) / 2) : startBattery;
-
-        for (let offset = 0; offset < directAssignments; offset += 1) {
-          const batteryIndex = assignmentStart + offset;
-          if (batteryIndex >= 0 && batteryIndex < batteryCount) nextConnections[inv][batteryIndex] = true;
-        }
-
-        for (let batteryIndex = startBattery; batteryIndex < groupEnd - 1; batteryIndex += 1) {
-          if (batteryIndex >= 0 && batteryIndex < batteryCount - 1) nextBatteryLinks[batteryIndex] = true;
-        }
-      }
-    }
-
-    setConnections(nextConnections);
-    setBatteryLinks(nextBatteryLinks);
-    setBatteryConnectionTypes(nextBatteryConnectionTypes);
-  };
-
-  const autoConfigureShareBattery = () => {
-    setConfigurationMode("share");
-  };
-
-  const autoConfigureDoNotShareBattery = () => {
-    setConfigurationMode("do_not_share");
-  };
-
-  useEffect(() => {
-    if (configurationMode === "share") {
-      applyShareConfiguration(batteryLayoutMode);
-    } else if (configurationMode === "do_not_share") {
-      applyDoNotShareConfiguration(batteryLayoutMode);
-    }
-  }, [configurationMode, batteryLayoutMode, inverterCount, batteryCount, inverterModel]);
-
-  const demoBalanced = () => {
-    setConfigurationMode("none");
-    setInverterCount(2);
-    setBatteryCount(3);
-    setConnections([[true, false, false], [false, true, true]]);
-    setBatteryLinks([false, true]);
-    setBatteryConnectionTypes(["three_point_terminal", "three_point_terminal", "three_point_terminal"]);
-  };
-
-  const demoOverload = () => {
-    setConfigurationMode("none");
-    setInverterCount(3);
-    setBatteryCount(2);
-    setConnections([[true, false], [true, false], [true, false]]);
-    setBatteryLinks([false]);
-    setBatteryConnectionTypes(["three_point_terminal", "three_point_terminal"]);
-  };
-
-  const demoShared = () => {
-    setConfigurationMode("none");
-    setInverterCount(2);
-    setBatteryCount(2);
-    setConnections([[true, false], [false, true]]);
-    setBatteryLinks([true]);
-    setBatteryConnectionTypes(["three_point_terminal", "three_point_terminal"]);
-  };
-
-  const results = useMemo(
-    () => analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, batteryConnectionTypes, inverterModel, batteryLayoutMode),
-    [inverterCount, batteryCount, connections, batteryLinks, batteryConnectionTypes, inverterModel, batteryLayoutMode]
-  );
-
-  const selectedCurrent = INVERTER_MODELS[inverterModel]?.current ?? DEFAULT_INVERTER_CURRENT;
-  const isFrontStacking = batteryLayoutMode === "front_stacking";
+function buildSvg(state, results) {
+  const inverterCount = state.inverterCount;
+  const batteryCount = state.batteryCount;
+  const isFrontStacking = state.batteryLayoutMode === "front_stacking";
   const stackingColumns = isFrontStacking ? Math.ceil(batteryCount / 2) : batteryCount;
   const diagramWidth = Math.max(860, Math.max(inverterCount, stackingColumns) * 170 + 240);
   const diagramHeight = isFrontStacking ? 560 : 440;
   const inverterY = 90;
   const batteryTopY = isFrontStacking ? 250 : diagramHeight - 170;
   const batteryBottomY = isFrontStacking ? 390 : batteryTopY;
+  const selectedCurrent = (INVERTER_MODELS[state.inverterModel] || {}).current || 250;
 
   const batteryPositions = results.batteryNames.map((name, i) => {
     if (!isFrontStacking) {
@@ -890,9 +725,10 @@ function ElectricalBehaviorModel() {
   const inverterAnchorCenters = results.inverterNames.map((_, i) => {
     const connectedBatteries = results.batteryNames
       .map((__, batteryIndex) => batteryIndex)
-      .filter((batteryIndex) => (results.directFlows[i]?.[batteryIndex] ?? 0) > 0);
-    if (connectedBatteries.length > 0) return getGroupBounds(connectedBatteries, batteryPositions).centerX;
-    return inverterCount === 1 ? diagramWidth / 2 : 120 + i * ((diagramWidth - 240) / Math.max(1, inverterCount - 1));
+      .filter((batteryIndex) => ((results.directFlows[i] || [])[batteryIndex] || 0) > 0);
+    return connectedBatteries.length > 0
+      ? getGroupBoundsCenter(connectedBatteries, batteryPositions)
+      : (inverterCount === 1 ? diagramWidth / 2 : 120 + i * ((diagramWidth - 240) / Math.max(1, inverterCount - 1)));
   });
 
   const inverterPositions = inverterAnchorCenters.map((centerX, i) => {
@@ -901,8 +737,7 @@ function ElectricalBehaviorModel() {
       .filter((entry) => Math.abs(entry.value - centerX) < 1)
       .sort((a, b) => a.index - b.index);
     const clusterIndex = sameCluster.findIndex((entry) => entry.index === i);
-    const spread = 120;
-    const offset = sameCluster.length > 1 ? (clusterIndex - (sameCluster.length - 1) / 2) * spread : 0;
+    const offset = sameCluster.length > 1 ? (clusterIndex - (sameCluster.length - 1) / 2) * 120 : 0;
     return { name: results.inverterNames[i], x: centerX - 45 + offset, y: inverterY };
   });
 
@@ -910,489 +745,593 @@ function ElectricalBehaviorModel() {
   const isFrontStackShared = isFrontStacking && results.globalShareMode === "share";
   const isFrontStackDoNotShare = isFrontStacking && results.globalShareMode === "do_not_share";
 
-  const figureContent = (
-    <div style={isFigureFullscreen ? styles.figureWrapFullscreen : styles.figureWrap}>
-      <svg viewBox={`0 0 ${diagramWidth} ${diagramHeight}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Electrical behavior diagram">
-        <text x={diagramWidth / 2} y={30} textAnchor="middle" style={{ fill: "#475569", fontSize: 14, fontWeight: 700 }}>Inverters</text>
-        <text x={diagramWidth / 2} y={diagramHeight - 18} textAnchor="middle" style={{ fill: "#475569", fontSize: 14, fontWeight: 700 }}>Batteries</text>
+  let svg = '<svg viewBox="0 0 ' + diagramWidth + ' ' + diagramHeight + '" style="width:100%;height:auto" role="img" aria-label="Electrical behavior diagram">';
+  svg += '<text x="' + (diagramWidth / 2) + '" y="30" text-anchor="middle" style="fill:#475569;font-size:14px;font-weight:700">Inverters</text>';
+  svg += '<text x="' + (diagramWidth / 2) + '" y="' + (diagramHeight - 18) + '" text-anchor="middle" style="fill:#475569;font-size:14px;font-weight:700">Batteries</text>';
 
-        {results.inverterNames.flatMap((inv, i) => results.batteryNames.map((bat, j) => {
-          if (!connections[i]?.[j]) return null;
-          const current = results.directFlows[i][j];
-          if (current <= 0) return null;
-          const from = inverterPositions[i];
-          const to = batteryPositions[j];
-          return (
-            <g key={`${inv}-${bat}`}>
-              <line x1={from.x + 45} y1={from.y + 56} x2={to.x + 64} y2={to.y} stroke="#000000" strokeWidth="2.5" />
-              <text x={(from.x + to.x) / 2 + 10} y={(from.y + to.y) / 2 + 6} textAnchor="middle" style={{ fill: "#64748b", fontSize: 11 }}>{formatAmps(current)}A</text>
-            </g>
-          );
-        }))}
+  // Power conductors inverter -> battery
+  results.inverterNames.forEach((inv, i) => {
+    results.batteryNames.forEach((bat, j) => {
+      if (!(state.connections[i] || [])[j]) return;
+      const current = results.directFlows[i][j];
+      if (current <= 0) return;
+      const from = inverterPositions[i];
+      const to = batteryPositions[j];
+      svg += '<line x1="' + (from.x + 45) + '" y1="' + (from.y + 56) + '" x2="' + (to.x + 64) + '" y2="' + to.y + '" stroke="#000" stroke-width="2.5"/>';
+      svg += '<text x="' + ((from.x + to.x) / 2 + 10) + '" y="' + ((from.y + to.y) / 2 + 6) + '" text-anchor="middle" style="fill:#64748b;font-size:11px">' + formatAmps(current) + 'A</text>';
+    });
+  });
 
-        {!isFrontStackShared && !isFrontStackDoNotShare && results.autoCommConnections.flatMap((row, i) => row.map((enabled, j) => {
-          if (!enabled) return null;
-          const from = inverterPositions[i];
-          const to = batteryPositions[j];
-          return <line key={`comm-line-${i}-${j}`} x1={from.x + 70} y1={from.y + 62} x2={to.x + 90} y2={to.y - 6} stroke="#2563eb" strokeWidth="1.5" strokeDasharray="6 5" />;
-        }))}
+  // Communication: standard (non-front-stack)
+  if (!isFrontStackShared && !isFrontStackDoNotShare) {
+    results.autoCommConnections.forEach((row, i) => {
+      row.forEach((enabled, j) => {
+        if (!enabled) return;
+        const from = inverterPositions[i];
+        const to = batteryPositions[j];
+        svg += '<line x1="' + (from.x + 70) + '" y1="' + (from.y + 62) + '" x2="' + (to.x + 90) + '" y2="' + (to.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+      });
+    });
+    results.autoCommBatteryLinks.forEach((enabled, i) => {
+      if (!enabled) return;
+      const a = batteryPositions[i];
+      const b = batteryPositions[i + 1];
+      svg += '<line x1="' + (a.x + 90) + '" y1="' + (a.y + 90) + '" x2="' + (b.x + 90) + '" y2="' + (a.y + 90) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+    });
+  }
 
-        {!isFrontStackShared && !isFrontStackDoNotShare && results.autoCommBatteryLinks.map((enabled, i) => {
-          if (!enabled) return null;
-          const a = batteryPositions[i];
-          const b = batteryPositions[i + 1];
-          return <line key={`comm-battery-line-${i}`} x1={a.x + 90} y1={a.y + 90} x2={b.x + 90} y2={a.y + 90} stroke="#2563eb" strokeWidth="1.5" strokeDasharray="6 5" />;
-        })}
+  // Front-stack shared comm lines
+  if (isFrontStackShared && inverterPositions[0] && batteryPositions[0]) {
+    const inv0 = inverterPositions[0];
+    const bat0 = batteryPositions[0];
+    svg += '<line x1="' + (inv0.x + 70) + '" y1="' + (inv0.y + 62) + '" x2="' + (bat0.x + 90) + '" y2="' + (bat0.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+  }
+  if (isFrontStackShared) {
+    // Diagonal comm lines: top of column N -> bottom of column N-1
+    for (let offset = 0; offset < Math.max(0, frontStackColumnCount - 1); offset += 1) {
+      const fromColumn = frontStackColumnCount - 1 - offset;
+      const toColumn = fromColumn - 1;
+      const fromTopIndex = getTopBatteryIndexForColumn(fromColumn);
+      const toBottomIndex = getBottomBatteryIndexForColumn(toColumn, batteryCount);
+      if (fromTopIndex >= batteryCount || toBottomIndex === -1) continue;
+      const from = batteryPositions[fromTopIndex];
+      const to = batteryPositions[toBottomIndex];
+      svg += '<line x1="' + (from.x + 28) + '" y1="' + (from.y + 90) + '" x2="' + (to.x + 100) + '" y2="' + (to.y + 18) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+    }
+    // Vertical comm lines: within each column, top battery -> bottom battery (closes the daisy chain)
+    for (let column = 0; column < frontStackColumnCount; column += 1) {
+      const topIndex = getTopBatteryIndexForColumn(column);
+      const bottomIndex = getBottomBatteryIndexForColumn(column, batteryCount);
+      if (bottomIndex === -1) continue;
+      const top = batteryPositions[topIndex];
+      const bottom = batteryPositions[bottomIndex];
+      svg += '<line x1="' + (top.x + 94) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 94) + '" y2="' + (bottom.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+    }
+  }
 
-        {isFrontStackShared && inverterPositions[0] && batteryPositions[0] && (
-          <line x1={inverterPositions[0].x + 70} y1={inverterPositions[0].y + 62} x2={batteryPositions[0].x + 90} y2={batteryPositions[0].y - 6} stroke="#2563eb" strokeWidth="1.5" strokeDasharray="6 5" />
-        )}
+  // Front-stack do-not-share comm
+  if (isFrontStackDoNotShare) {
+    results.batteryGroups.forEach((group, groupIndex) => {
+      const topIndices = group.filter((batteryIndex) => batteryIndex % 2 === 0);
+      const touchedInverter = results.inverterNames.findIndex((_, inv) =>
+        group.some((batteryIndex) => ((results.directFlows[inv] || [])[batteryIndex] || 0) > 0)
+      );
+      if (touchedInverter !== -1 && topIndices.length > 0) {
+        const from = inverterPositions[touchedInverter];
+        const to = batteryPositions[topIndices[0]];
+        svg += '<line x1="' + (from.x + 70) + '" y1="' + (from.y + 62) + '" x2="' + (to.x + 90) + '" y2="' + (to.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+      }
+      topIndices.forEach((topIndex) => {
+        const bottomIndex = topIndex + 1;
+        if (group.indexOf(bottomIndex) === -1) return;
+        const top = batteryPositions[topIndex];
+        const bottom = batteryPositions[bottomIndex];
+        svg += '<line x1="' + (top.x + 94) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 94) + '" y2="' + (bottom.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+      });
+      topIndices.slice(1).forEach((topIndex) => {
+        const previousBottomIndex = topIndex - 1;
+        if (group.indexOf(previousBottomIndex) === -1) return;
+        const from = batteryPositions[topIndex];
+        const to = batteryPositions[previousBottomIndex];
+        svg += '<line x1="' + (from.x + 28) + '" y1="' + (from.y + 90) + '" x2="' + (to.x + 100) + '" y2="' + (to.y + 18) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+      });
+    });
+  }
 
-        {isFrontStackShared && Array.from({ length: Math.max(0, frontStackColumnCount - 1) }, (_, offset) => {
-          const fromColumn = frontStackColumnCount - 1 - offset;
-          const toColumn = fromColumn - 1;
-          const fromTopIndex = getTopBatteryIndexForColumn(fromColumn);
-          const toBottomIndex = getBottomBatteryIndexForColumn(toColumn, batteryCount);
-          if (fromTopIndex >= batteryCount || toBottomIndex === -1) return null;
-          const from = batteryPositions[fromTopIndex];
-          const to = batteryPositions[toBottomIndex];
-          return (
-            <line
-              key={`front-comm-diagonal-${fromTopIndex}-${toBottomIndex}`}
-              x1={from.x + 28}
-              y1={from.y + 90}
-              x2={to.x + 100}
-              y2={to.y + 18}
-              stroke="#2563eb"
-              strokeWidth="1.5"
-              strokeDasharray="6 5"
-            />
-          );
-        })}
+  // Battery-to-battery power conductors (non-front-stack)
+  if (!isFrontStackShared && !isFrontStackDoNotShare) {
+    results.linkTransfers.forEach((transfer, i) => {
+      if (!state.batteryLinks[i]) return;
+      const a = batteryPositions[i];
+      const b = batteryPositions[i + 1];
+      const current = Math.abs(transfer.net);
+      svg += '<line x1="' + (a.x + 64) + '" y1="' + (a.y + 70) + '" x2="' + (b.x + 64) + '" y2="' + (a.y + 70) + '" stroke="#000" stroke-width="3"/>';
+      svg += '<text x="' + ((a.x + b.x) / 2 + 64) + '" y="' + (a.y + 64) + '" text-anchor="middle" style="fill:#64748b;font-size:11px">' + formatAmps(current) + 'A</text>';
+    });
+  }
 
-        {isFrontStackDoNotShare && results.inverterNames.flatMap((_, inv) => {
-          const groupTopIndices = Array.from({ length: frontStackColumnCount }, (_, column) => getTopBatteryIndexForColumn(column))
-            .filter((topIndex) => topIndex < batteryCount && (results.directFlows[inv]?.[topIndex] ?? 0) > 0)
-            .sort((a, b) => a - b);
+  // Front-stack shared power
+  if (isFrontStackShared) {
+    for (let column = 0; column < frontStackColumnCount; column += 1) {
+      const topIndex = getTopBatteryIndexForColumn(column);
+      const bottomIndex = getBottomBatteryIndexForColumn(column, batteryCount);
+      if (bottomIndex === -1) continue;
+      const top = batteryPositions[topIndex];
+      const bottom = batteryPositions[bottomIndex];
+      const current = (results.batteryStatus[bottomIndex] || {}).finalLoad || 0;
+      svg += '<line x1="' + (top.x + 64) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 64) + '" y2="' + bottom.y + '" stroke="#000" stroke-width="3"/>';
+      svg += '<text x="' + (bottom.x + 50) + '" y="' + (bottom.y - 8) + '" text-anchor="end" style="fill:#64748b;font-size:11px">' + formatAmps(current) + 'A</text>';
+    }
+    for (let column = 0; column < Math.max(0, frontStackColumnCount - 1); column += 1) {
+      const leftTopIndex = getTopBatteryIndexForColumn(column);
+      const rightTopIndex = getTopBatteryIndexForColumn(column + 1);
+      if (rightTopIndex >= batteryCount) continue;
+      const left = batteryPositions[leftTopIndex];
+      const right = batteryPositions[rightTopIndex];
+      const transferIndex = Math.min(results.linkTransfers.length - 1, leftTopIndex + 1);
+      const current = Math.abs(((results.linkTransfers[transferIndex] || {}).net) || 0);
+      svg += '<line x1="' + (left.x + 128) + '" y1="' + (left.y + 70) + '" x2="' + right.x + '" y2="' + (right.y + 70) + '" stroke="#000" stroke-width="3"/>';
+      svg += '<text x="' + ((left.x + 128 + right.x) / 2) + '" y="' + (left.y + 64) + '" text-anchor="middle" style="fill:#64748b;font-size:11px">' + formatAmps(current) + 'A</text>';
+    }
+  }
 
-          const lines = [];
+  // Front-stack do-not-share power
+  if (isFrontStackDoNotShare) {
+    results.batteryGroups.forEach((group) => {
+      group.filter((batteryIndex) => batteryIndex % 2 === 0).forEach((topIndex) => {
+        const bottomIndex = topIndex + 1;
+        if (group.indexOf(bottomIndex) === -1) return;
+        const top = batteryPositions[topIndex];
+        const bottom = batteryPositions[bottomIndex];
+        const current = Math.abs((results.batteryStatus[bottomIndex] || {}).finalLoad || 0);
+        svg += '<line x1="' + (top.x + 64) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 64) + '" y2="' + bottom.y + '" stroke="#000" stroke-width="3"/>';
+        svg += '<text x="' + (bottom.x + 50) + '" y="' + (bottom.y - 8) + '" text-anchor="end" style="fill:#64748b;font-size:11px">' + formatAmps(current) + 'A</text>';
+      });
+    });
+    results.batteryGroups.forEach((group) => {
+      const topIndices = group.filter((batteryIndex) => batteryIndex % 2 === 0);
+      topIndices.slice(1).forEach((topIndex, pairIndex) => {
+        const previousTopIndex = topIndices[pairIndex];
+        const boundaryIndex = Math.min(results.linkTransfers.length - 1, previousTopIndex + 1);
+        const left = batteryPositions[previousTopIndex];
+        const right = batteryPositions[topIndex];
+        const current = Math.abs(((results.linkTransfers[boundaryIndex] || {}).net) || 0);
+        svg += '<line x1="' + (left.x + 128) + '" y1="' + (left.y + 70) + '" x2="' + right.x + '" y2="' + (right.y + 70) + '" stroke="#000" stroke-width="3"/>';
+        svg += '<text x="' + ((left.x + 128 + right.x) / 2) + '" y="' + (left.y + 64) + '" text-anchor="middle" style="fill:#64748b;font-size:11px">' + formatAmps(current) + 'A</text>';
+      });
+    });
+  }
 
-          if (groupTopIndices.length > 0) {
-            const firstTopIndex = groupTopIndices[0];
-            const from = inverterPositions[inv];
-            const to = batteryPositions[firstTopIndex];
-            lines.push(
-              <line
-                key={`front-dns-comm-inverter-${inv}-${firstTopIndex}`}
-                x1={from.x + 70}
-                y1={from.y + 62}
-                x2={to.x + 90}
-                y2={to.y - 6}
-                stroke="#2563eb"
-                strokeWidth="1.5"
-                strokeDasharray="6 5"
-              />
-            );
-          }
+  // Inverter-to-inverter mustard comm lines
+  results.inverterNames.forEach((_, i) => {
+    results.inverterNames.forEach((__, j) => {
+      if (j <= i) return;
+      const a = inverterPositions[i];
+      const b = inverterPositions[j];
+      svg += '<line x1="' + (a.x + 45) + '" y1="' + (a.y + 28) + '" x2="' + (b.x + 45) + '" y2="' + (b.y + 28) + '" stroke="#d4a017" stroke-width="2" stroke-dasharray="6 6"/>';
+    });
+  });
 
-          groupTopIndices.forEach((topIndex) => {
-            const column = Math.floor(topIndex / 2);
-            const bottomIndex = getBottomBatteryIndexForColumn(column, batteryCount);
-            if (bottomIndex !== -1) {
-              const top = batteryPositions[topIndex];
-              const bottom = batteryPositions[bottomIndex];
-              lines.push(
-                <line
-                  key={`front-dns-comm-vertical-${topIndex}-${bottomIndex}`}
-                  x1={top.x + 94}
-                  y1={top.y + 102}
-                  x2={bottom.x + 94}
-                  y2={bottom.y - 6}
-                  stroke="#2563eb"
-                  strokeWidth="1.5"
-                  strokeDasharray="6 5"
-                />
-              );
-            }
-          });
+  // Inverter boxes
+  inverterPositions.forEach((item, idx) => {
+    svg += '<g>';
+    svg += '<text x="' + (item.x + 45) + '" y="' + (item.y - 6) + '" text-anchor="middle" style="fill:#64748b;font-size:10px;font-weight:700">' + (idx === 0 ? "Primary" : "Secondary") + '</text>';
+    svg += '<rect x="' + item.x + '" y="' + item.y + '" width="90" height="56" rx="10" fill="#cbd5e1" stroke="#475569" stroke-width="2"/>';
+    svg += '<text x="' + (item.x + 45) + '" y="' + (item.y + 24) + '" text-anchor="middle" style="fill:#0f172a;font-size:13px;font-weight:700">' + escapeHtml(item.name) + '</text>';
+    svg += '<text x="' + (item.x + 45) + '" y="' + (item.y + 42) + '" text-anchor="middle" style="fill:#475569;font-size:11px">' + formatAmps(selectedCurrent) + 'A DC</text>';
+    svg += '</g>';
+  });
 
-          groupTopIndices.slice(1).forEach((topIndex) => {
-            const column = Math.floor(topIndex / 2);
-            const previousBottomIndex = getBottomBatteryIndexForColumn(column - 1, batteryCount);
-            if (previousBottomIndex !== -1) {
-              const from = batteryPositions[topIndex];
-              const to = batteryPositions[previousBottomIndex];
-              lines.push(
-                <line
-                  key={`front-dns-comm-diagonal-${topIndex}-${previousBottomIndex}`}
-                  x1={from.x + 28}
-                  y1={from.y + 90}
-                  x2={to.x + 100}
-                  y2={to.y + 18}
-                  stroke="#2563eb"
-                  strokeWidth="1.5"
-                  strokeDasharray="6 5"
-                />
-              );
-            }
-          });
+  // Battery boxes
+  batteryPositions.forEach((item, i) => {
+    const status = results.batteryStatus[i];
+    const active = !status.inactive;
+    const commGroup = results.communicationGroups.find((g) => g.batteries.indexOf(i) !== -1);
+    const isPrimaryBattery = commGroup ? commGroup.batteries[0] === i : (i === 0 || !state.batteryLinks[i - 1]);
+    const opacity = active ? 1 : 0.35;
+    const fill = status.overloaded ? "#fee2e2" : "#ecfccb";
+    const stroke = status.overloaded ? "#dc2626" : "#65a30d";
+    svg += '<g opacity="' + opacity + '">';
+    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 118) + '" text-anchor="middle" style="fill:#64748b;font-size:10px;font-weight:700">' + (isPrimaryBattery ? "Primary" : "Secondary") + '</text>';
+    svg += '<rect x="' + item.x + '" y="' + item.y + '" width="128" height="102" rx="10" fill="' + fill + '" stroke="' + stroke + '" stroke-width="2.5"/>';
+    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 18) + '" text-anchor="middle" style="fill:#0f172a;font-size:14px;font-weight:700">' + escapeHtml(item.name) + '</text>';
+    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 32) + '" text-anchor="middle" style="fill:#475569;font-size:10px;font-weight:700">' + escapeHtml(status.config.label) + '</text>';
+    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 46) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">Current at the Node:</text>';
+    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 60) + '" text-anchor="middle" style="fill:#475569;font-size:11px">' + formatAmps(status.incomingNodeCurrent) + ' / Max ' + formatAmps(status.config.nodeRating) + 'A</text>';
+    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 74) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">Max Bat Discharge:</text>';
+    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 88) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">250A</text>';
+    svg += '</g>';
+  });
 
-          return lines;
-        })}
+  svg += '</svg>';
 
-        {!isFrontStackShared && !isFrontStackDoNotShare && results.linkTransfers.map((transfer, i) => {
-          if (!batteryLinks[i]) return null;
-          const a = batteryPositions[i];
-          const b = batteryPositions[i + 1];
-          const current = Math.abs(transfer.net);
-          return (
-            <g key={`link-${i}`}>
-              <line x1={a.x + 64} y1={a.y + 70} x2={b.x + 64} y2={a.y + 70} stroke="#000000" strokeWidth="3" />
-              <text x={(a.x + b.x) / 2 + 64} y={a.y + 64} textAnchor="middle" style={{ fill: "#64748b", fontSize: 11 }}>{formatAmps(current)}A</text>
-            </g>
-          );
-        })}
-
-        {isFrontStackShared && Array.from({ length: frontStackColumnCount }, (_, column) => {
-          const topIndex = getTopBatteryIndexForColumn(column);
-          const bottomIndex = getBottomBatteryIndexForColumn(column, batteryCount);
-          if (bottomIndex === -1) return null;
-          const top = batteryPositions[topIndex];
-          const bottom = batteryPositions[bottomIndex];
-          const current = results.batteryStatus[bottomIndex]?.finalLoad ?? 0;
-          return (
-            <g key={`front-power-vertical-${column}`}>
-              <line x1={top.x + 64} y1={top.y + 102} x2={bottom.x + 64} y2={bottom.y} stroke="#000000" strokeWidth="3" />
-              <text x={bottom.x + 50} y={bottom.y - 8} textAnchor="end" style={{ fill: "#64748b", fontSize: 11 }}>{formatAmps(current)}A</text>
-            </g>
-          );
-        })}
-
-        {isFrontStackShared && Array.from({ length: frontStackColumnCount - 1 }, (_, column) => {
-          const leftTopIndex = getTopBatteryIndexForColumn(column);
-          const rightTopIndex = getTopBatteryIndexForColumn(column + 1);
-          if (rightTopIndex >= batteryCount) return null;
-          const left = batteryPositions[leftTopIndex];
-          const right = batteryPositions[rightTopIndex];
-          const transferIndex = getLastBatteryIndexForColumn(column, batteryCount);
-          const current = Math.abs(results.linkTransfers[transferIndex]?.net ?? 0);
-          return (
-            <g key={`front-power-top-${column}`}>
-              <line x1={left.x + 128} y1={left.y + 70} x2={right.x} y2={right.y + 70} stroke="#000000" strokeWidth="3" />
-              <text x={(left.x + 128 + right.x) / 2} y={left.y + 64} textAnchor="middle" style={{ fill: "#64748b", fontSize: 11 }}>{formatAmps(current)}A</text>
-            </g>
-          );
-        })}
-
-        {isFrontStackDoNotShare && Array.from({ length: frontStackColumnCount }, (_, column) => {
-          const topIndex = getTopBatteryIndexForColumn(column);
-          const bottomIndex = getBottomBatteryIndexForColumn(column, batteryCount);
-          if (bottomIndex === -1 || !batteryLinks[topIndex]) return null;
-          const top = batteryPositions[topIndex];
-          const bottom = batteryPositions[bottomIndex];
-          const current = Math.abs(results.linkTransfers[topIndex]?.net ?? results.batteryStatus[bottomIndex]?.finalLoad ?? 0);
-          return (
-            <g key={`front-dns-power-vertical-${column}`}>
-              <line x1={top.x + 64} y1={top.y + 102} x2={bottom.x + 64} y2={bottom.y} stroke="#000000" strokeWidth="3" />
-              <text x={bottom.x + 50} y={bottom.y - 8} textAnchor="end" style={{ fill: "#64748b", fontSize: 11 }}>{formatAmps(current)}A</text>
-            </g>
-          );
-        })}
-
-        {isFrontStackDoNotShare && Array.from({ length: Math.max(0, frontStackColumnCount - 1) }, (_, column) => {
-          const leftTopIndex = getTopBatteryIndexForColumn(column);
-          const rightTopIndex = getTopBatteryIndexForColumn(column + 1);
-          if (rightTopIndex >= batteryCount) return null;
-          const boundaryIndex = getLastBatteryIndexForColumn(column, batteryCount);
-          if (!batteryLinks[boundaryIndex]) return null;
-          const left = batteryPositions[leftTopIndex];
-          const right = batteryPositions[rightTopIndex];
-          const current = Math.abs(results.linkTransfers[boundaryIndex]?.net ?? 0);
-          return (
-            <g key={`front-dns-power-top-${column}`}>
-              <line x1={left.x + 128} y1={left.y + 70} x2={right.x} y2={right.y + 70} stroke="#000000" strokeWidth="3" />
-              <text x={(left.x + 128 + right.x) / 2} y={left.y + 64} textAnchor="middle" style={{ fill: "#64748b", fontSize: 11 }}>{formatAmps(current)}A</text>
-            </g>
-          );
-        })}
-
-        {results.inverterNames.flatMap((_, i) => results.inverterNames.map((__, j) => {
-          if (j <= i) return null;
-          const a = inverterPositions[i];
-          const b = inverterPositions[j];
-          return <line key={`inv-comm-${i}-${j}`} x1={a.x + 45} y1={a.y + 28} x2={b.x + 45} y2={b.y + 28} stroke="#d4a017" strokeWidth="2" strokeDasharray="6 6" />;
-        }))}
-
-        {inverterPositions.map((item, idx) => (
-          <g key={item.name}>
-            <text x={item.x + 45} y={item.y - 6} textAnchor="middle" style={{ fill: "#64748b", fontSize: 10, fontWeight: 700 }}>{idx === 0 ? "Primary" : "Secondary"}</text>
-            <rect x={item.x} y={item.y} width="90" height="56" rx="10" fill="#cbd5e1" stroke="#475569" strokeWidth="2" />
-            <text x={item.x + 45} y={item.y + 24} textAnchor="middle" style={{ fill: "#0f172a", fontSize: 13, fontWeight: 700 }}>{item.name}</text>
-            <text x={item.x + 45} y={item.y + 42} textAnchor="middle" style={{ fill: "#475569", fontSize: 11 }}>{formatAmps(selectedCurrent)}A DC</text>
-          </g>
-        ))}
-
-        {batteryPositions.map((item, i) => {
-          const status = results.batteryStatus[i];
-          const active = !status.inactive;
-          const commGroup = results.communicationGroups.find((group) => group.batteries.includes(i));
-          const isPrimaryBattery = commGroup ? commGroup.batteries[0] === i : i === 0 || !batteryLinks[i - 1];
-          return (
-            <g key={item.name} opacity={active ? 1 : 0.35}>
-              <text x={item.x + 64} y={item.y + 118} textAnchor="middle" style={{ fill: "#64748b", fontSize: 10, fontWeight: 700 }}>{isPrimaryBattery ? "Primary" : "Secondary"}</text>
-              <rect x={item.x} y={item.y} width="128" height="102" rx="10" fill={status.overloaded ? "#fee2e2" : "#ecfccb"} stroke={status.overloaded ? "#dc2626" : "#65a30d"} strokeWidth="2.5" />
-              <text x={item.x + 64} y={item.y + 18} textAnchor="middle" style={{ fill: "#0f172a", fontSize: 14, fontWeight: 700 }}>{item.name}</text>
-              <text x={item.x + 64} y={item.y + 32} textAnchor="middle" style={{ fill: "#475569", fontSize: 10, fontWeight: 700 }}>{status.config.label}</text>
-              <text x={item.x + 64} y={item.y + 46} textAnchor="middle" style={{ fill: "#64748b", fontSize: 10 }}>Current at the Node:</text>
-              <text x={item.x + 64} y={item.y + 60} textAnchor="middle" style={{ fill: "#475569", fontSize: 11 }}>{formatAmps(status.incomingNodeCurrent)} / Max {formatAmps(status.config.nodeRating)}A</text>
-              <text x={item.x + 64} y={item.y + 74} textAnchor="middle" style={{ fill: "#64748b", fontSize: 10 }}>Max Bat Discharge:</text>
-              <text x={item.x + 64} y={item.y + 88} textAnchor="middle" style={{ fill: "#64748b", fontSize: 10 }}>250A</text>
-            </g>
-          );
-        })}
-      </svg>
-      <Legend />
-    </div>
-  );
-
-  return (
-    <div style={styles.page}>
-      <div style={styles.container}>
-        <div style={styles.headerRow}>
-          <div>
-            <h1 style={styles.title}>Battery & inverter wiring validator for installers</h1>
-            <p style={styles.subtitle}>
-              This tool allows you to configure and validate inverter-to-battery wiring layouts by selecting inverter models, defining the number of inverters and batteries, and assigning power conductors between them. Each inverter outputs its rated current based on the selected model, with Envy 8kW and Envy 10kW limited to one battery conductor and Envy Duo 21 / Envy 12kW allowing up to two. Batteries can absorb up to 250 A DC, and all conductors are rated at 250 A DC. Share Battery is evaluated from the effective electrical topology: batteries can be shared either through battery-to-battery conductors or, on Envy Duo 21 / Envy 12kW, through internally bridged inverter battery ports. The tool automatically generates communication topology, highlights overload conditions, improper terminal usage, battery group separation, and inactive components, while displaying real-time current flow, node limits, and battery charge/discharge behavior. Each battery connection point defaults to eWay and can be changed to eWay Lite, eWay, or eWay Pro to reflect different terminal capacities and constraints. Disclaimer: This tool is for theoretical and educational purposes only and does not replace proper system design, engineering analysis, or code compliance review. Always consult a licensed electrician and a qualified electrical engineer before finalizing or installing any electrical system.
-            </p>
-          </div>
-          <div style={styles.buttonRow}>
-            <ControlButton onClick={demoBalanced}><span style={{ fontWeight: 700 }}>Do not share example</span></ControlButton>
-            <ControlButton onClick={demoOverload}><span style={{ fontWeight: 700 }}>Overload example</span></ControlButton>
-            <ControlButton onClick={demoShared}><span style={{ fontWeight: 700 }}>Share battery example</span></ControlButton>
-            <ControlButton onClick={clearAll}><span style={{ fontWeight: 700 }}>Clear</span></ControlButton>
-          </div>
-        </div>
-
-        <div style={styles.layout}>
-          <div style={styles.panel}>
-            <div style={styles.panelHeader}>System setup</div>
-            <div style={styles.setupBody}>
-              <Section title="Step 1. Choose inverter model" open>
-                <select value={inverterModel} onChange={(e) => setInverterModel(e.target.value)} style={styles.select}>
-                  <option value="envy_8kw">Envy 8kW — 167 A</option>
-                  <option value="envy_10kw">Envy 10kW — 210 A</option>
-                  <option value="envy_duo_21_envy_12kw">Envy Duo 21 / Envy 12kW — 250 A</option>
-                </select>
-                <div style={styles.helper}>
-                  {INVERTER_MODELS[inverterModel]?.bridgedPorts ? "This inverter model treats its two battery ports as internally bridged." : "This inverter model does not bridge separate battery ports."}
-                </div>
-              </Section>
-
-              <Section title="Step 2. Choose the number of devices." open>
-                <div style={styles.twoCol}>
-                  <div>
-                    <label style={styles.subFieldLabel}>Number of inverters</label>
-                    <div style={styles.row}>
-                      <button style={styles.smallButton} onClick={() => resizeSystem(inverterCount - 1, batteryCount)}>−</button>
-                      <input style={styles.input} value={inverterCount} onChange={(e) => resizeSystem(e.target.value, batteryCount)} />
-                      <button style={styles.smallButton} onClick={() => resizeSystem(inverterCount + 1, batteryCount)}>+</button>
-                    </div>
-                  </div>
-                  <div>
-                    <label style={styles.subFieldLabel}>Number of batteries</label>
-                    <div style={styles.row}>
-                      <button style={styles.smallButton} onClick={() => resizeSystem(inverterCount, batteryCount - 1)}>−</button>
-                      <input style={styles.input} value={batteryCount} onChange={(e) => resizeSystem(inverterCount, e.target.value)} />
-                      <button style={styles.smallButton} onClick={() => resizeSystem(inverterCount, batteryCount + 1)}>+</button>
-                    </div>
-                  </div>
-                </div>
-              </Section>
-
-              <Section title="Auto configuration" open>
-                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Step 3. Choose the Configuration</div>
-                <div style={styles.configButtonRow}>
-                  <ControlButton onClick={autoConfigureShareBattery} active={configurationMode === "share"}>Share battery</ControlButton>
-                  <ControlButton onClick={autoConfigureDoNotShareBattery} active={configurationMode === "do_not_share"}>Do not share battery</ControlButton>
-                </div>
-                <div style={{ ...styles.configButtonRow, marginTop: 8 }}>
-                  <ControlButton onClick={() => setBatteryLayoutMode("side_by_side")} active={batteryLayoutMode === "side_by_side"}>Side to side</ControlButton>
-                  <ControlButton onClick={() => setBatteryLayoutMode("front_stacking")} active={batteryLayoutMode === "front_stacking"}>Front stacking</ControlButton>
-                </div>
-                <div style={styles.helper}>Share battery will auto-configure a shared battery layout using eWay connection points, enable all adjacent battery conductors, and center the inverter landings on a contiguous battery window whenever possible so the unused batteries are balanced at both extremes, without automatically expanding to eWay Pro.</div>
-                <div style={styles.helper}>Do not share battery will auto-configure proportional contiguous battery groups per inverter, make sure no battery is left unused, and use battery-to-battery conductors within each isolated group while keeping different inverter groups electrically separate.</div>
-                <div style={styles.helper}>Layout view changes only the drawing. Share and Do Not Share battery rules stay the same.</div>
-                <div style={styles.helper}>In front stacking, the lower battery in each stack is treated as eWay Lite and is fed from the eWay battery above it.</div>
-              </Section>
-
-              <Section title="Manual Configuration" open={false}>
-                <Section title="Inverter → Battery conductors" open={false}>
-                  <div style={styles.tableWrap}>
-                    <table style={styles.table}>
-                      <thead>
-                        <tr>
-                          <th style={styles.th}></th>
-                          {results.batteryNames.map((b) => <th key={b} style={styles.th}>{b}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {results.inverterNames.map((inv, i) => {
-                          const rowStyle = (connections[i]?.filter(Boolean).length || 0) > INVERTER_MODELS[inverterModel].maxPorts ? { background: "#fffbeb" } : undefined;
-                          return (
-                            <tr key={inv} style={rowStyle}>
-                              <td style={styles.tdLabel}>{inv}</td>
-                              {results.batteryNames.map((bat, j) => (
-                                <td key={`${inv}-${bat}`} style={styles.td}>
-                                  <ToggleButton on={Boolean(connections[i]?.[j])} onClick={() => toggleConnection(i, j)} />
-                                </td>
-                              ))}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </Section>
-
-                <Section title="Battery connection points" open={false}>
-                  {results.batteryNames.map((name, i) => {
-                    const appliedType = getEffectiveBatteryConnectionType(i, batteryConnectionTypes[i] ?? "three_point_terminal", batteryLayoutMode);
-                    const config = getConnectionPointConfig(appliedType);
-                    const lockedFrontStackLite = isFrontStackBottomBattery(i, batteryLayoutMode);
-                    return (
-                      <div key={name} style={styles.linkRow}>
-                        <div>
-                          <div style={{ fontWeight: 700 }}>{name}</div>
-                          <div style={styles.helper}>{config.label} • Max {formatAmps(config.nodeRating)} A node rating • {config.terminalCount} landing{config.terminalCount > 1 ? "s" : ""}{lockedFrontStackLite ? " • fixed by front stacking" : ""}</div>
-                        </div>
-                        <select value={appliedType} disabled={lockedFrontStackLite} onChange={(e) => changeBatteryConnectionType(i, e.target.value)} style={{ ...styles.select, width: 140, opacity: lockedFrontStackLite ? 0.7 : 1 }}>
-                          <option value="single_point_terminal">eWay Lite</option>
-                          <option value="three_point_terminal">eWay</option>
-                          <option value="six_point_busbar">eWay Pro</option>
-                        </select>
-                      </div>
-                    );
-                  })}
-                </Section>
-
-                <Section title="Battery ↔ Battery conductors" open={false}>
-                  {batteryCount === 1 ? <div style={styles.helper}>Add another battery to enable inter-battery conductors.</div> : null}
-                  {Array.from({ length: Math.max(0, batteryCount - 1) }, (_, i) => (
-                    <div key={i} style={styles.linkRow}>
-                      <div>
-                        <div style={{ fontWeight: 700 }}>{results.batteryNames[i]} ↔ {results.batteryNames[i + 1]}</div>
-                        <div style={styles.helper}>250 A DC conductor</div>
-                      </div>
-                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                        <input type="checkbox" checked={batteryLinks[i]} onChange={() => toggleBatteryLink(i)} />
-                        Enable
-                      </label>
-                    </div>
-                  ))}
-                </Section>
-              </Section>
-            </div>
-          </div>
-
-          <div style={styles.resultsCol}>
-            <div style={styles.panel}>
-              <div style={styles.figureHeaderRow}>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>Illustrative figure</div>
-                <button style={styles.button} onClick={() => setIsFigureFullscreen(true)}>Expand</button>
-              </div>
-              <div style={styles.panelBody}>{figureContent}</div>
-            </div>
-
-            {isFigureFullscreen && (
-              <div style={styles.overlayBackdrop} onClick={() => setIsFigureFullscreen(false)}>
-                <div style={styles.overlayPanel} onClick={(e) => e.stopPropagation()}>
-                  <div style={styles.figureHeaderRow}>
-                    <div style={{ fontSize: 18, fontWeight: 700 }}>Illustrative figure</div>
-                    <button style={styles.button} onClick={() => setIsFigureFullscreen(false)}>Close</button>
-                  </div>
-                  <div style={styles.panelBody}>{figureContent}</div>
-                </div>
-              </div>
-            )}
-
-            <div style={styles.panel}>
-              <div style={styles.panelHeader}>System result</div>
-              <div style={styles.panelBody}>
-                <div style={styles.badgeRow}>
-                  <MiniBadge type={results.risks.length === 0 ? "good" : "bad"}>{results.risks.length === 0 ? "No overload" : "Overload present"}</MiniBadge>
-                  {results.alarms.length > 0 ? <MiniBadge type="bad">Alarm present</MiniBadge> : null}
-                  <MiniBadge type="warn">System observations</MiniBadge>
-                  <MiniBadge>Communication: Auto</MiniBadge>
-                  <MiniBadge type={results.globalShareMode === "share" ? "good" : "warn"}>{results.globalShareMode === "share" ? "Share Battery" : "Do Not Share Battery"}</MiniBadge>
-                  <MiniBadge type={results.bridgedPorts ? "warn" : undefined}>{results.bridgedPorts ? "Ports bridged internally" : "Ports not bridged"}</MiniBadge>
-                  <MiniBadge>Inverter model: {results.modelLabel}</MiniBadge>
-                  <MiniBadge>Total inverter current: {formatAmps(results.totalInput)} A</MiniBadge>
-                  <MiniBadge>Total Battery Discharging Capacity: {formatAmps(batteryCount * BATTERY_MAX)} A</MiniBadge>
-                </div>
-
-                {(results.alarms.length > 0 || results.risks.length > 0 || results.observations.length > 0 || results.inverterLimitWarnings.length > 0 || results.advisories.length > 0) && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 16 }}>
-                    {results.alarms.length > 0 && (
-                      <div style={styles.alertRed}>
-                        <div style={styles.alertTitleRed}>🚨 Topology alarm</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "#7f1d1d" }}>
-                          {results.alarms.map((alarm, i) => <div key={`alarm-${i}`}>• {alarm}</div>)}
-                        </div>
-                      </div>
-                    )}
-
-                    {results.risks.length > 0 && (
-                      <div style={styles.alertRed}>
-                        <div style={styles.alertTitleRed}>🔴 Electrical risks</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "#7f1d1d" }}>
-                          {results.risks.map((risk, i) => <div key={`risk-${i}`}>• {risk}</div>)}
-                        </div>
-                      </div>
-                    )}
-
-                    {(results.observations.length > 0 || results.inverterLimitWarnings.length > 0 || results.advisories.length > 0) && (
-                      <div style={styles.alertYellow}>
-                        <div style={styles.alertTitleYellow}>🟡 System observations</div>
-                        <StructuredObservations results={results} />
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ ...styles.cards, marginTop: 16 }}>
-                  {results.batteryStatus.map((status) => {
-                    const percent = Math.min(100, (status.finalLoad / BATTERY_MAX) * 100);
-                    const cardStyle = status.overloaded ? styles.cardRed : status.inactive ? styles.cardYellow : styles.card;
-                    return (
-                      <div key={status.name} style={cardStyle}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                          <div style={{ fontWeight: 700 }}>{status.name}</div>
-                          <MiniBadge type={status.overloaded ? "bad" : status.inactive ? "warn" : "good"}>{status.overloaded ? "Overloaded" : status.inactive ? "Idle" : "Within limit"}</MiniBadge>
-                        </div>
-                        <div style={{ fontSize: 13, color: "#334155", marginBottom: 4 }}>Connection point: {status.config.label}</div>
-                        <div style={{ fontSize: 13, color: "#334155", marginBottom: 4 }}>Incoming current at node: {formatAmps(status.incomingNodeCurrent)} A</div>
-                        <div style={{ fontSize: 13, color: "#334155", marginBottom: 4 }}>Max Discharge: 250A</div>
-                        <div style={{ fontSize: 12, color: "#64748b" }}>Power landings used: {status.totalConnectionPointsUsed} / {status.config.terminalCount}</div>
-                        <div style={styles.progress}>
-                          <div style={{ width: `${percent}%`, height: "100%", background: status.overloaded ? "#ef4444" : status.inactive ? "#eab308" : "#0f172a" }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  const legend = '<div class="legend">' +
+    '<div class="legendItem"><div class="swatchBlack"></div><span>Power cable</span></div>' +
+    '<div class="legendItem"><div class="swatchBlue"></div><span>Battery &amp; inverter communication</span></div>' +
+    '<div class="legendItem"><div class="swatchMustard"></div><span>Inverter-to-inverter communication</span></div>' +
+    '</div>';
+  return svg + legend;
 }
 
+function buildStructuredObservations(results) {
+  const topology = [];
+  const groups = [];
+  const communication = [];
+  const general = results.inverterLimitWarnings.slice();
+  results.observations.forEach((line) => {
+    if (line.indexOf("Share Battery topology confirmed") !== -1 || line.indexOf("Do Not Share Battery") !== -1) topology.push(line);
+    else if (/^Group \d+:/.test(line)) groups.push(line);
+    else if (line.indexOf("Communication grouped") !== -1 || line.indexOf("Shared communication group") !== -1 || line.indexOf("Single inverter with multiple batteries") !== -1) communication.push(line);
+    else general.push(line);
+  });
+  let html = '<div class="obsContainer">';
+  if (topology.length > 0) {
+    html += '<ul class="obsList">' + topology.map((l) => '<li>' + escapeHtml(l) + '</li>').join('') + '</ul>';
+  }
+  if (groups.length > 0) {
+    html += '<ul class="' + (topology.length ? 'obsListSpaced' : 'obsList') + '">' + groups.map((l) => '<li>' + escapeHtml(l) + '</li>').join('') + '</ul>';
+  }
+  if (communication.length > 0) {
+    html += '<ul class="obsCommList">' + communication.map((l) => '<li>' + escapeHtml(l) + '</li>').join('') + '</ul>';
+  }
+  if (results.advisories.length > 0) {
+    html += '<ul class="obsListSpaced">' + results.advisories.map((l) => '<li>' + escapeHtml(l) + '</li>').join('') + '</ul>';
+  }
+  if (general.length > 0) {
+    html += '<ul class="obsListSpaced">' + general.map((l) => '<li>' + escapeHtml(l) + '</li>').join('') + '</ul>';
+  }
+  html += '</div>';
+  return html;
+}
 
-    const container = document.getElementById("root");
-    container.innerHTML = "";
-    ReactDOM.createRoot(container).render(<ElectricalBehaviorModel />);
-  </script>
+function buildSetupPanel(state, results) {
+  const inv = state.inverterCount, bat = state.batteryCount;
+  const model = INVERTER_MODELS[state.inverterModel];
+  const bridgedNote = model.bridgedPorts
+    ? "This inverter model treats its two battery ports as internally bridged."
+    : "This inverter model does not bridge separate battery ports.";
+
+  let html = '';
+  html += '<div class="panel">';
+  html += '<div class="panelHeader">System setup</div>';
+  html += '<div class="setupBody">';
+
+  // Step 1
+  html += '<details class="section"' + (detailsOpen.step1 ? ' open' : '') + ' data-details-key="step1">';
+  html += '<summary>Step 1. Choose inverter model</summary>';
+  html += '<select class="select" data-action="setInverterModel">';
+  ['envy_8kw', 'envy_10kw', 'envy_duo_21_envy_12kw'].forEach((key) => {
+    const m = INVERTER_MODELS[key];
+    const sel = state.inverterModel === key ? ' selected' : '';
+    html += '<option value="' + key + '"' + sel + '>' + escapeHtml(m.label) + ' — ' + m.current + ' A</option>';
+  });
+  html += '</select>';
+  html += '<div class="helper">' + escapeHtml(bridgedNote) + '</div>';
+  html += '</details>';
+
+  // Step 2
+  html += '<details class="section"' + (detailsOpen.step2 ? ' open' : '') + ' data-details-key="step2">';
+  html += '<summary>Step 2. Choose the number of devices.</summary>';
+  html += '<div class="twoCol">';
+  html += '<div>';
+  html += '<label class="subFieldLabel">Number of inverters</label>';
+  html += '<div class="row">';
+  html += '<button class="smallButton" data-action="invMinus">−</button>';
+  html += '<input class="input" data-action="invInput" value="' + inv + '"/>';
+  html += '<button class="smallButton" data-action="invPlus">+</button>';
+  html += '</div></div>';
+  html += '<div>';
+  html += '<label class="subFieldLabel">Number of batteries</label>';
+  html += '<div class="row">';
+  html += '<button class="smallButton" data-action="batMinus">−</button>';
+  html += '<input class="input" data-action="batInput" value="' + bat + '"/>';
+  html += '<button class="smallButton" data-action="batPlus">+</button>';
+  html += '</div></div>';
+  html += '</div>';
+  html += '</details>';
+
+  // Auto config
+  html += '<details class="section"' + (detailsOpen.autoConfig ? ' open' : '') + ' data-details-key="autoConfig">';
+  html += '<summary>Auto configuration</summary>';
+  html += '<div style="font-size:12px;font-weight:700;margin-bottom:8px">Step 3. Choose the Configuration</div>';
+  html += '<div class="configButtonRow">';
+  html += '<button class="btn' + (state.configurationMode === 'share' ? ' active' : '') + '" data-action="autoShare">Share battery</button>';
+  html += '<button class="btn' + (state.configurationMode === 'do_not_share' ? ' active' : '') + '" data-action="autoDoNotShare">Do not share battery</button>';
+  html += '</div>';
+  html += '<div class="configButtonRow" style="margin-top:8px">';
+  html += '<button class="btn' + (state.batteryLayoutMode === 'side_by_side' ? ' active' : '') + '" data-action="layoutSide">Side to side</button>';
+  html += '<button class="btn' + (state.batteryLayoutMode === 'front_stacking' ? ' active' : '') + '" data-action="layoutFront">Front stacking</button>';
+  html += '</div>';
+  html += '<div class="helper">Share battery will auto-configure a shared battery layout using eWay connection points, enable all adjacent battery conductors, and center the inverter landings on a contiguous battery window whenever possible so the unused batteries are balanced at both extremes, without automatically expanding to eWay Pro.</div>';
+  html += '<div class="helper">Do not share battery will auto-configure proportional contiguous battery groups per inverter, make sure no battery is left unused, and use battery-to-battery conductors within each isolated group while keeping different inverter groups electrically separate.</div>';
+  html += '<div class="helper">Layout view changes only the drawing. Share and Do Not Share battery rules stay the same.</div>';
+  html += '<div class="helper">In front stacking, the lower battery in each stack is treated as eWay Lite and is fed from the eWay battery above it.</div>';
+  html += '</details>';
+
+  // Manual config
+  html += '<details class="section"' + (detailsOpen.manualConfig ? ' open' : '') + ' data-details-key="manualConfig">';
+  html += '<summary>Manual Configuration</summary>';
+
+  // Inverter -> battery conductors table
+  html += '<details class="section"' + (detailsOpen.manualConductors ? ' open' : '') + ' data-details-key="manualConductors" style="margin-top:8px">';
+  html += '<summary>Inverter → Battery conductors</summary>';
+  html += '<div class="tableWrap"><table class="tbl">';
+  html += '<thead><tr><th></th>';
+  results.batteryNames.forEach((b) => { html += '<th>' + escapeHtml(b) + '</th>'; });
+  html += '</tr></thead><tbody>';
+  results.inverterNames.forEach((iname, i) => {
+    const overLimit = ((state.connections[i] || []).filter(Boolean).length || 0) > model.maxPorts;
+    const trStyle = overLimit ? ' style="background:#fffbeb"' : '';
+    html += '<tr' + trStyle + '><td class="lbl">' + escapeHtml(iname) + '</td>';
+    results.batteryNames.forEach((bname, j) => {
+      const on = !!(state.connections[i] || [])[j];
+      const cls = on ? 'toggleOn' : 'toggleOff';
+      const txt = on ? 'Connected' : 'Open';
+      html += '<td><button class="' + cls + '" data-action="toggleConn" data-i="' + i + '" data-j="' + j + '">' + txt + '</button></td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  html += '</details>';
+
+  // Battery connection points
+  html += '<details class="section"' + (detailsOpen.manualBattConn ? ' open' : '') + ' data-details-key="manualBattConn" style="margin-top:8px">';
+  html += '<summary>Battery connection points</summary>';
+  results.batteryNames.forEach((name, i) => {
+    const appliedType = getEffectiveBatteryConnectionType(i, state.batteryConnectionTypes[i] || 'three_point_terminal', state.batteryLayoutMode);
+    const config = getConnectionPointConfig(appliedType);
+    const lockedFrontStackLite = isFrontStackBottomBattery(i, state.batteryLayoutMode);
+    html += '<div class="bpRow">';
+    html += '<div>';
+    html += '<div class="bpRowName">' + escapeHtml(name) + '</div>';
+    html += '<div class="helper">' + escapeHtml(config.label) + ' • Max ' + formatAmps(config.nodeRating) + ' A node rating • ' + config.terminalCount + ' landing' + (config.terminalCount > 1 ? 's' : '') + (lockedFrontStackLite ? ' • fixed by front stacking' : '') + '</div>';
+    html += '</div>';
+    const disabled = lockedFrontStackLite ? ' disabled' : '';
+    const opacityStyle = lockedFrontStackLite ? ';opacity:0.7' : '';
+    html += '<select class="select" style="width:140px' + opacityStyle + '" data-action="changeBatType" data-idx="' + i + '"' + disabled + '>';
+    [['single_point_terminal', 'eWay Lite'], ['three_point_terminal', 'eWay'], ['six_point_busbar', 'eWay Pro']].forEach((opt) => {
+      const sel = appliedType === opt[0] ? ' selected' : '';
+      html += '<option value="' + opt[0] + '"' + sel + '>' + opt[1] + '</option>';
+    });
+    html += '</select>';
+    html += '</div>';
+  });
+  html += '</details>';
+
+  // Battery <-> battery conductors
+  html += '<details class="section"' + (detailsOpen.manualBatteryLinks ? ' open' : '') + ' data-details-key="manualBatteryLinks" style="margin-top:8px">';
+  html += '<summary>Battery ↔ Battery conductors</summary>';
+  if (bat === 1) html += '<div class="helper">Add another battery to enable inter-battery conductors.</div>';
+  for (let i = 0; i < Math.max(0, bat - 1); i += 1) {
+    html += '<div class="bbRow">';
+    html += '<div>';
+    html += '<div class="bpRowName">' + escapeHtml(results.batteryNames[i]) + ' ↔ ' + escapeHtml(results.batteryNames[i + 1]) + '</div>';
+    html += '<div class="helper">250 A DC conductor</div>';
+    html += '</div>';
+    const checked = state.batteryLinks[i] ? ' checked' : '';
+    html += '<label class="checkLabel"><input type="checkbox" data-action="toggleLink" data-idx="' + i + '"' + checked + '/> Enable</label>';
+    html += '</div>';
+  }
+  html += '</details>';
+
+  html += '</details>'; // Manual
+
+  html += '</div>'; // setupBody
+  html += '</div>'; // panel
+  return html;
+}
+
+function buildResultsPanel(state, results) {
+  const totalBatteryDischarge = state.batteryCount * BATTERY_MAX;
+  const overloadBadge = badge(results.risks.length === 0 ? 'good' : 'bad', results.risks.length === 0 ? 'No overload' : 'Overload present');
+  const alarmBadge = results.alarms.length > 0 ? badge('bad', 'Alarm present') : '';
+  const obsBadge = badge('warn', 'System observations');
+  const commBadge = badge(null, 'Communication: Auto');
+  const shareBadge = badge(results.globalShareMode === 'share' ? 'good' : 'warn', results.globalShareMode === 'share' ? 'Share Battery' : 'Do Not Share Battery');
+  const portsBadge = badge(results.bridgedPorts ? 'warn' : null, results.bridgedPorts ? 'Ports bridged internally' : 'Ports not bridged');
+  const modelBadge = badge(null, 'Inverter model: ' + escapeHtml(results.modelLabel));
+  const totalBadge = badge(null, 'Total inverter current: ' + formatAmps(results.totalInput) + ' A');
+  const dischargeBadge = badge(null, 'Total Battery Discharging Capacity: ' + formatAmps(totalBatteryDischarge) + ' A');
+
+  let html = '';
+  html += '<div class="panel">';
+  html += '<div class="panelHeader">System result</div>';
+  html += '<div class="panelBody">';
+  html += '<div class="badgeRow">' + overloadBadge + alarmBadge + obsBadge + commBadge + shareBadge + portsBadge + modelBadge + totalBadge + dischargeBadge + '</div>';
+
+  const showAlerts = results.alarms.length > 0 || results.risks.length > 0 || results.observations.length > 0 || results.inverterLimitWarnings.length > 0 || results.advisories.length > 0;
+  if (showAlerts) {
+    html += '<div style="display:flex;flex-direction:column;gap:16px;margin-top:16px">';
+    if (results.alarms.length > 0) {
+      html += '<div class="alertRed">';
+      html += '<div class="alertTitleRed">🚨 Topology alarm</div>';
+      html += '<div class="alertList red">';
+      results.alarms.forEach((a) => { html += '<div>• ' + escapeHtml(a) + '</div>'; });
+      html += '</div></div>';
+    }
+    if (results.risks.length > 0) {
+      html += '<div class="alertRed">';
+      html += '<div class="alertTitleRed">🔴 Electrical risks</div>';
+      html += '<div class="alertList red">';
+      results.risks.forEach((r) => { html += '<div>• ' + escapeHtml(r) + '</div>'; });
+      html += '</div></div>';
+    }
+    if (results.observations.length > 0 || results.inverterLimitWarnings.length > 0 || results.advisories.length > 0) {
+      html += '<div class="alertYellow">';
+      html += '<div class="alertTitleYellow">🟡 System observations</div>';
+      html += buildStructuredObservations(results);
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  // Battery cards
+  html += '<div class="cards" style="margin-top:16px">';
+  results.batteryStatus.forEach((status) => {
+    const percent = Math.min(100, (status.finalLoad / BATTERY_MAX) * 100);
+    const cardCls = status.overloaded ? 'cardRed' : status.inactive ? 'cardYellow' : 'card';
+    const statusBadge = badge(status.overloaded ? 'bad' : status.inactive ? 'warn' : 'good', status.overloaded ? 'Overloaded' : status.inactive ? 'Idle' : 'Within limit');
+    const fillColor = status.overloaded ? '#ef4444' : status.inactive ? '#eab308' : '#0f172a';
+    html += '<div class="' + cardCls + '">';
+    html += '<div class="cardHeader"><div class="cardName">' + escapeHtml(status.name) + '</div>' + statusBadge + '</div>';
+    html += '<div class="cardLine">Connection point: ' + escapeHtml(status.config.label) + '</div>';
+    html += '<div class="cardLine">Incoming current at node: ' + formatAmps(status.incomingNodeCurrent) + ' A</div>';
+    html += '<div class="cardLine">Max Discharge: 250A</div>';
+    html += '<div class="cardSmall">Power landings used: ' + status.totalConnectionPointsUsed + ' / ' + status.config.terminalCount + '</div>';
+    html += '<div class="progress"><div style="width:' + percent + '%;height:100%;background:' + fillColor + '"></div></div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  html += '</div></div>';
+  return html;
+}
+
+function buildFigurePanel(state, results, fullscreen) {
+  const wrapCls = fullscreen ? 'figureWrap fullscreen' : 'figureWrap';
+  const figureContent = '<div class="' + wrapCls + '">' + buildSvg(state, results) + '</div>';
+  if (fullscreen) {
+    return '<div class="overlayBackdrop" data-action="closeOverlay">' +
+      '<div class="overlayPanel" data-action="overlayPanelClick">' +
+      '<div class="figureHeaderRow"><div class="figureTitle">Illustrative figure</div><button class="btn" data-action="closeFullscreen">Close</button></div>' +
+      '<div class="panelBody">' + figureContent + '</div>' +
+      '</div></div>';
+  }
+  return '<div class="panel">' +
+    '<div class="figureHeaderRow"><div class="figureTitle">Illustrative figure</div><button class="btn" data-action="openFullscreen">Expand</button></div>' +
+    '<div class="panelBody">' + figureContent + '</div>' +
+    '</div>';
+}
+
+function render() {
+  const results = analyzeSystem(
+    state.inverterCount,
+    state.batteryCount,
+    state.connections,
+    state.batteryLinks,
+    state.batteryConnectionTypes,
+    state.inverterModel,
+    state.batteryLayoutMode
+  );
+
+  let html = '';
+  html += '<div class="page"><div class="container">';
+
+  // Header
+  html += '<div class="headerRow">';
+  html += '<div>';
+  html += '<h1 class="title">Battery &amp; inverter wiring validator for installers</h1>';
+  html += '<p class="subtitle">This tool allows you to configure and validate inverter-to-battery wiring layouts by selecting inverter models, defining the number of inverters and batteries, and assigning power conductors between them. Each inverter outputs its rated current based on the selected model, with Envy 8kW and Envy 10kW limited to one battery conductor and Envy Duo 21 / Envy 12kW allowing up to two. Batteries can absorb up to 250 A DC, and all conductors are rated at 250 A DC. Share Battery is evaluated from the effective electrical topology: batteries can be shared either through battery-to-battery conductors or, on Envy Duo 21 / Envy 12kW, through internally bridged inverter battery ports. The tool automatically generates communication topology, highlights overload conditions, improper terminal usage, battery group separation, and inactive components, while displaying real-time current flow, node limits, and battery charge/discharge behavior. Each battery connection point defaults to eWay and can be changed to eWay Lite, eWay, or eWay Pro to reflect different terminal capacities and constraints. Disclaimer: This tool is for theoretical and educational purposes only and does not replace proper system design, engineering analysis, or code compliance review. Always consult a licensed electrician and a qualified electrical engineer before finalizing or installing any electrical system.</p>';
+  html += '</div>';
+  html += '<div class="buttonRow">';
+  html += '<button class="btn" data-action="demoBalanced"><span style="font-weight:700">Do not share example</span></button>';
+  html += '<button class="btn" data-action="demoOverload"><span style="font-weight:700">Overload example</span></button>';
+  html += '<button class="btn" data-action="demoShared"><span style="font-weight:700">Share battery example</span></button>';
+  html += '<button class="btn" data-action="clearAll"><span style="font-weight:700">Clear</span></button>';
+  html += '</div>';
+  html += '</div>';
+
+  // Layout
+  html += '<div class="layout">';
+  html += buildSetupPanel(state, results);
+  html += '<div class="resultsCol">';
+  html += buildFigurePanel(state, results, false);
+  html += buildResultsPanel(state, results);
+  html += '</div>';
+  html += '</div>';
+
+  html += '</div></div>';
+
+  // Fullscreen overlay rendered last so it stacks on top
+  if (state.isFigureFullscreen) {
+    html += buildFigurePanel(state, results, true);
+  }
+
+  document.getElementById('root').innerHTML = html;
+}
+
+// === Render scheduling ===
+let renderQueued = false;
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  Promise.resolve().then(() => {
+    renderQueued = false;
+    render();
+  });
+}
+
+// === Event delegation ===
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  // Walk up to find the actionable element (button/select clicks may originate on inner span)
+  const el = t.closest('[data-action]');
+  if (!el) return;
+  const action = el.getAttribute('data-action');
+  switch (action) {
+    case 'demoBalanced': demoBalanced(); break;
+    case 'demoOverload': demoOverload(); break;
+    case 'demoShared': demoShared(); break;
+    case 'clearAll': clearAll(); break;
+    case 'invMinus': resizeSystem(state.inverterCount - 1, state.batteryCount); break;
+    case 'invPlus': resizeSystem(state.inverterCount + 1, state.batteryCount); break;
+    case 'batMinus': resizeSystem(state.inverterCount, state.batteryCount - 1); break;
+    case 'batPlus': resizeSystem(state.inverterCount, state.batteryCount + 1); break;
+    case 'autoShare': autoConfigureShareBattery(); break;
+    case 'autoDoNotShare': autoConfigureDoNotShareBattery(); break;
+    case 'layoutSide': setBatteryLayoutMode('side_by_side'); break;
+    case 'layoutFront': setBatteryLayoutMode('front_stacking'); break;
+    case 'toggleConn': {
+      const i = parseInt(el.getAttribute('data-i'), 10);
+      const j = parseInt(el.getAttribute('data-j'), 10);
+      toggleConnection(i, j);
+      break;
+    }
+    case 'openFullscreen': setState({ isFigureFullscreen: true }); break;
+    case 'closeFullscreen': setState({ isFigureFullscreen: false }); break;
+    case 'closeOverlay': {
+      // Only close if click originated on backdrop, not inside panel
+      if (el === t) setState({ isFigureFullscreen: false });
+      break;
+    }
+    case 'overlayPanelClick': e.stopPropagation(); break;
+  }
+});
+
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  const action = t.getAttribute('data-action');
+  if (!action) return;
+  if (action === 'setInverterModel') {
+    setInverterModel(t.value);
+  } else if (action === 'changeBatType') {
+    const idx = parseInt(t.getAttribute('data-idx'), 10);
+    changeBatteryConnectionType(idx, t.value);
+  } else if (action === 'toggleLink') {
+    const idx = parseInt(t.getAttribute('data-idx'), 10);
+    toggleBatteryLink(idx);
+  } else if (action === 'invInput') {
+    resizeSystem(t.value, state.batteryCount);
+  } else if (action === 'batInput') {
+    resizeSystem(state.inverterCount, t.value);
+  }
+});
+
+// Track <details> open/closed across re-renders
+document.addEventListener('toggle', (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  const key = t.getAttribute('data-details-key');
+  if (!key) return;
+  detailsOpen[key] = t.open;
+}, true);
+
+// Initial render
+render();
+
+})();
+</script>
 </body>
 </html>
