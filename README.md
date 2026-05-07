@@ -21,6 +21,6 @@ python3 -m http.server 8080
 # open http://localhost:8080/
 ```
 
-Edit `index.html` and refresh the browser.
+Edit `wiring_validator.html` and refresh the browser.
 
 **Deploy:** GitHub Pages, deploy from branch `main` at repository root. Pushing to `main` updates the live site; there is no separate CI workflow or build.
