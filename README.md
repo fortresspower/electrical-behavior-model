@@ -12,7 +12,7 @@ Browser-based tool for Fortress Power installers and internal engineering: model
 
 ## Development
 
-The app is a **single static file** (`index.html`): React 18 via CDN, inline Babel, no `package.json` or build step—by design, to keep maintenance minimal.
+The app is a **single static file** (`wiring_validator.html`): React 18 via CDN, inline Babel, no `package.json` or build step—by design, to keep maintenance minimal.
 
 **Run locally** (any static server):
 
