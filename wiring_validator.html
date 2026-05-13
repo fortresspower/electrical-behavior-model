@@ -20,6 +20,22 @@ body { background: #f8fafc; color: #0f172a; font-family: Arial, sans-serif; }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .layout { display: grid; grid-template-columns: 35% 65%; gap: 16px; align-items: start; }
 @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+@media print {
+  @page { size: letter portrait; margin: 0.5in; }
+  body { background: #ffffff !important; }
+  /* Hide page chrome, controls, and the entire setup column when printing. */
+  .setupCol, .demoButtonRow, .printHide, .figureHeaderRow .btn { display: none !important; }
+  /* Collapse to a single column so the figure + results occupy the full page. */
+  .layout { grid-template-columns: 1fr !important; gap: 12px !important; }
+  /* Compact panels for print. */
+  .panel { border: 1px solid #cbd5e1 !important; box-shadow: none !important; break-inside: avoid; page-break-inside: avoid; }
+  .figurePanel svg { max-width: 100% !important; height: auto !important; }
+  details { page-break-inside: avoid; }
+  details > summary { list-style: none; }
+  /* Force every <details> open so the printed PDF shows full content even if collapsed on screen. */
+  details:not([open]) > :not(summary) { display: block !important; }
+  details { display: block !important; }
+}
 .panel { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 1px 2px rgba(15,23,42,0.05); }
 .panelHeader { padding: 14px 16px 0 16px; font-size: 18px; font-weight: 700; }
 .setupBody { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
@@ -83,6 +99,8 @@ body { background: #f8fafc; color: #0f172a; font-family: Arial, sans-serif; }
 .alertList.red { color: #7f1d1d; }
 .figureTitle { font-size: 18px; font-weight: 700; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -956,10 +974,10 @@ function buildSvg(state, results) {
   const stackingColumns = isFrontStacking ? Math.ceil(batteryCount / 2) : batteryCount;
   const diagramWidth = Math.max(860, Math.max(inverterCount, stackingColumns) * 170 + 240);
   const isEforceLayout = state.batteryModel === "eforce";
-  const diagramHeight = isFrontStacking ? 560 : (isEforceLayout ? 470 : 440);
+  const diagramHeight = isFrontStacking ? 610 : 470;
   const inverterY = 90;
   const batteryTopY = isFrontStacking ? 250 : diagramHeight - 170;
-  const batteryBottomY = isFrontStacking ? 390 : batteryTopY;
+  const batteryBottomY = isFrontStacking ? 430 : batteryTopY;
   const selectedCurrent = (INVERTER_MODELS[state.inverterModel] || {}).current || 250;
 
   const batteryPositions = results.batteryNames.map((name, i) => {
@@ -1182,6 +1200,8 @@ function buildSvg(state, results) {
 
   // Battery boxes
   const isEforceMode = state.batteryModel === 'eforce';
+  // Use the eWay-band + module-block visual for every battery, in every layout.
+  const useStackedVisual = true;
   batteryPositions.forEach((item, i) => {
     const status = results.batteryStatus[i];
     const active = !status.inactive;
@@ -1191,12 +1211,12 @@ function buildSvg(state, results) {
     const overloadStroke = status.overloaded ? "#dc2626" : "#65a30d";
     const overloadFill = status.overloaded ? "#fee2e2" : "#ecfccb";
     const stackSize = isEforceMode ? Math.max(1, Math.min(3, (state.eforceStackSizes || [])[i] || 1)) : 1;
-    const batteryMaxA = isEforceMode ? getBatteryMaxCurrent(i, 'eforce', state.eforceStackSizes) : 250;
+    const batteryMaxA = getBatteryMaxCurrent(i, state.batteryModel, state.eforceStackSizes);
     svg += '<g opacity="' + opacity + '">';
-    const primaryY = isEforceMode ? item.y + 134 : item.y + 118;
+    const primaryY = useStackedVisual ? (isEforceMode ? item.y + 134 : item.y + 118) : item.y + 118;
     svg += '<text x="' + (item.x + 64) + '" y="' + primaryY + '" text-anchor="middle" style="fill:#64748b;font-size:10px;font-weight:700">' + (isPrimaryBattery ? "Primary" : "Secondary") + '</text>';
 
-    if (isEforceMode) {
+    if (useStackedVisual) {
       // eWay band at the top — separate visual element, slightly darker, with name + node load.
       const ewayX = item.x;
       const ewayY = item.y;
@@ -1204,13 +1224,13 @@ function buildSvg(state, results) {
       const ewayH = 26;
       svg += '<rect x="' + ewayX + '" y="' + ewayY + '" width="' + ewayW + '" height="' + ewayH + '" rx="6" fill="#cbd5e1" stroke="' + overloadStroke + '" stroke-width="2"/>';
       svg += '<text x="' + (ewayX + 8) + '" y="' + (ewayY + 11) + '" style="fill:#0f172a;font-size:10px;font-weight:700">' + escapeHtml(item.name) + '</text>';
-      svg += '<text x="' + (ewayX + 8) + '" y="' + (ewayY + 22) + '" style="fill:#475569;font-size:9px">eWay · ' + formatAmps(status.config.nodeRating) + 'A Max</text>';
+      svg += '<text x="' + (ewayX + 8) + '" y="' + (ewayY + 22) + '" style="fill:#475569;font-size:9px">' + escapeHtml(status.config.label) + ' · ' + formatAmps(status.config.nodeRating) + 'A</text>';
       svg += '<text x="' + (ewayX + ewayW - 8) + '" y="' + (ewayY + 11) + '" text-anchor="end" style="fill:#0f172a;font-size:10px;font-weight:700">' + formatAmps(status.incomingNodeCurrent) + 'A</text>';
       svg += '<text x="' + (ewayX + ewayW - 8) + '" y="' + (ewayY + 22) + '" text-anchor="end" style="fill:#0f172a;font-size:9px;font-weight:700">at node</text>';
 
-      // Modules section: distinct square blocks for each module, stacked vertically.
+      // Module section: 1 block for eBoost, 1–3 blocks for eForce stacks.
       const modulesAreaY = item.y + ewayH + 4;
-      const modulesAreaH = 102 - ewayH - 4; // 72h total for modules
+      const modulesAreaH = 102 - ewayH - 4; // 72h
       const moduleGap = 2;
       const totalGap = moduleGap * (stackSize - 1);
       const moduleH = Math.max(12, Math.floor((modulesAreaH - totalGap) / stackSize));
@@ -1223,22 +1243,21 @@ function buildSvg(state, results) {
           const studX = item.x + 22 + s * 24;
           svg += '<circle cx="' + studX + '" cy="' + modY + '" r="2.5" fill="' + overloadStroke + '" opacity="0.6"/>';
         }
-        // Module label (module index from bottom: M1, M2, M3)
+        // Module label (and, for eBoost, the absorbed/max line beneath it inside the same module).
         if (moduleH >= 16) {
-          svg += '<text x="' + (item.x + 64) + '" y="' + (modY + moduleH / 2 + 3) + '" text-anchor="middle" style="fill:#475569;font-size:9px;font-weight:700">M' + (stackSize - m) + ' · 9.6 kWh</text>';
+          if (isEforceMode) {
+            const moduleLabel = 'M' + (stackSize - m) + ' · 9.6 kWh';
+            svg += '<text x="' + (item.x + 64) + '" y="' + (modY + moduleH / 2 + 3) + '" text-anchor="middle" style="fill:#475569;font-size:11px;font-weight:700">' + moduleLabel + '</text>';
+          } else {
+            svg += '<text x="' + (item.x + 64) + '" y="' + (modY + moduleH / 2 - 5) + '" text-anchor="middle" style="fill:#475569;font-size:11px;font-weight:700">eBoost</text>';
+            svg += '<text x="' + (item.x + 64) + '" y="' + (modY + moduleH / 2 + 11) + '" text-anchor="middle" style="fill:#0f172a;font-size:10px;font-weight:700">' + formatAmps(status.finalLoad) + ' / ' + formatAmps(batteryMaxA) + 'A max</text>';
+          }
         }
       }
-      // Per-stack load + max underneath the modules (just above the Primary/Secondary tag at y+118)
-      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 118) + '" text-anchor="middle" style="fill:#0f172a;font-size:10px;font-weight:700">' + formatAmps(status.finalLoad) + ' / ' + formatAmps(batteryMaxA) + 'A max</text>';
-    } else {
-      // eBoost rendering unchanged
-      svg += '<rect x="' + item.x + '" y="' + item.y + '" width="128" height="102" rx="10" fill="' + overloadFill + '" stroke="' + overloadStroke + '" stroke-width="2.5"/>';
-      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 18) + '" text-anchor="middle" style="fill:#0f172a;font-size:14px;font-weight:700">' + escapeHtml(item.name) + '</text>';
-      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 32) + '" text-anchor="middle" style="fill:#475569;font-size:10px;font-weight:700">' + escapeHtml(status.config.label) + '</text>';
-      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 46) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">Current at the Node:</text>';
-      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 60) + '" text-anchor="middle" style="fill:#475569;font-size:11px">' + formatAmps(status.incomingNodeCurrent) + ' / Max ' + formatAmps(status.config.nodeRating) + 'A</text>';
-      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 74) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">Max Bat Discharge:</text>';
-      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 88) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">250A</text>';
+      // Per-stack load + max below modules — eForce only (eBoost shows it inside the module above).
+      if (isEforceMode) {
+        svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 118) + '" text-anchor="middle" style="fill:#0f172a;font-size:10px;font-weight:700">' + formatAmps(status.finalLoad) + ' / ' + formatAmps(batteryMaxA) + 'A max</text>';
+      }
     }
     svg += '</g>';
   });
@@ -1502,7 +1521,7 @@ function buildResultsPanel(state, results) {
   const dischargeBadge = badge(null, 'Total Battery Discharging Capacity: ' + formatAmps(totalBatteryDischarge) + ' A');
 
   let html = '';
-  html += '<div class="panel">';
+  html += '<div class="panel" id="pdfResultsPanel">';
   html += '<div class="panelHeader">System result</div>';
   html += '<div class="panelBody">';
   html += '<div class="badgeRow">' + overloadBadge + alarmBadge + obsBadge + commBadge + shareBadge + portsBadge + modelBadge + totalBadge + dischargeBadge + '</div>';
@@ -1567,10 +1586,104 @@ function buildFigurePanel(state, results, fullscreen) {
       '<div class="panelBody">' + figureContent + '</div>' +
       '</div></div>';
   }
-  return '<div class="panel">' +
-    '<div class="figureHeaderRow"><div class="figureTitle">Illustrative figure</div><button class="btn" data-action="openFullscreen">Expand</button></div>' +
+  return '<div class="panel" id="pdfFigurePanel">' +
+    '<div class="figureHeaderRow"><div class="figureTitle">Illustrative figure</div>' +
+    '<div style="display:flex;gap:6px"><button class="btn" data-action="downloadPdf">Download PDF</button><button class="btn" data-action="openFullscreen">Expand</button></div>' +
+    '</div>' +
     '<div class="panelBody">' + figureContent + '</div>' +
     '</div>';
+}
+
+function downloadReportPdf() {
+  // Build the PDF using jsPDF (text + image placement) and html2canvas
+  // (rasterize HTML to images). Both are loaded from CDN as standalone
+  // scripts in the page <head>.
+  const figureNode = document.getElementById('pdfFigurePanel');
+  const resultsNode = document.getElementById('pdfResultsPanel');
+  if (!figureNode || !resultsNode) return;
+  const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  const html2canvasFn = window.html2canvas;
+  if (!jsPDFCtor || !html2canvasFn) {
+    window.print();
+    return;
+  }
+
+  const pill = document.createElement('div');
+  pill.style.cssText = 'position:fixed;top:14px;right:18px;background:#0f172a;color:#ffffff;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;z-index:99999;box-shadow:0 4px 12px rgba(15,23,42,0.25);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;';
+  pill.textContent = 'Generating PDF…';
+  document.body.appendChild(pill);
+
+  const pdf = new jsPDFCtor({ unit: 'pt', format: 'letter', orientation: 'portrait' });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const margin = 36;
+  const usableW = pageW - 2 * margin;
+  const now = new Date();
+  let y = margin;
+
+  function done() { pdf.save('wiring_validator_' + now.toISOString().slice(0, 10) + '.pdf'); pill.remove(); }
+  function abort(err) { console.error('PDF generation failed:', err); pill.remove(); window.print(); }
+
+  // Title + date.
+  pdf.setFontSize(14);
+  pdf.setFont(undefined, 'bold');
+  pdf.text('Wiring validator report', margin, y + 12);
+  y += 20;
+  pdf.setFontSize(8);
+  pdf.setFont(undefined, 'normal');
+  pdf.setTextColor(110);
+  pdf.text('Generated ' + now.toLocaleString() + ' — Theoretical worst-case analysis at maximum rated current. Engineer stamp required before installation.', margin, y + 7, { maxWidth: usableW });
+  y += 22;
+  pdf.setTextColor(0);
+  pdf.setFontSize(10);
+  pdf.setFont(undefined, 'bold');
+  pdf.text('Illustrative figure', margin, y + 8);
+  y += 14;
+
+  // Capture the figure panel (entire DOM, not just the SVG) via html2canvas.
+  // This is the most reliable path because we know html2canvas handles HTML
+  // wrappers correctly, and the SVG inside renders via the browser's normal
+  // pipeline before capture.
+  html2canvasFn(figureNode, {
+    scale: 2,
+    useCORS: true,
+    allowTaint: true,
+    logging: false,
+    backgroundColor: '#ffffff',
+  }).then(function (fcanvas) {
+    const fDataUrl = fcanvas.toDataURL('image/png');
+    const fAspect = fcanvas.height / fcanvas.width;
+    // Reserve roughly half the page for the figure so the results panel has room below.
+    const remaining = pageH - margin - y;
+    const figMaxH = remaining * 0.55;
+    let fW = usableW;
+    let fH = fW * fAspect;
+    if (fH > figMaxH) { fH = figMaxH; fW = fH / fAspect; }
+    pdf.addImage(fDataUrl, 'PNG', margin, y, fW, fH);
+    y += fH + 16;
+
+    return html2canvasFn(resultsNode, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+    });
+  }).then(function (rcanvas) {
+    const rDataUrl = rcanvas.toDataURL('image/png');
+    const rAspect = rcanvas.height / rcanvas.width;
+    let remaining = pageH - margin - y;
+    let rW = usableW;
+    let rH = rW * rAspect;
+    if (rH > remaining) {
+      pdf.addPage();
+      y = margin;
+      remaining = pageH - margin - y;
+      if (rH > remaining) { rH = remaining; rW = rH / rAspect; }
+    }
+    pdf.addImage(rDataUrl, 'PNG', margin, y, rW, rH);
+    done();
+  }).catch(abort);
 }
 
 function render() {
@@ -1593,7 +1706,9 @@ function render() {
   html += '<div class="headerRow">';
   html += '<div>';
   html += '<h1 class="title">Battery &amp; inverter wiring validator for installers</h1>';
-  html += '<p class="subtitle">This tool allows you to configure and validate inverter-to-battery wiring layouts by selecting inverter models, defining the number of inverters and batteries, and assigning power conductors between them. Each inverter outputs its rated current based on the selected model, with Envy 8kW and Envy 10kW limited to one battery conductor and Envy Duo 21 / Envy 12kW allowing up to two. Batteries can absorb up to 250 A DC, and all conductors are rated at 250 A DC. Share Battery is evaluated from the effective electrical topology: batteries can be shared either through battery-to-battery conductors or, on Envy Duo 21 / Envy 12kW, through internally bridged inverter battery ports. The tool automatically generates communication topology, highlights overload conditions, improper terminal usage, battery group separation, and inactive components, while displaying real-time current flow, node limits, and battery charge/discharge behavior. Each battery connection point defaults to eWay and can be changed to eWay Lite, eWay, or eWay Pro to reflect different terminal capacities and constraints. Disclaimer: This tool is for theoretical and educational purposes only and does not replace proper system design, engineering analysis, or code compliance review. Always consult a licensed electrician and a qualified electrical engineer before finalizing or installing any electrical system.</p>';
+  html += '<p class="subtitle">Plan a Fortress Power battery + inverter installation before you wire it. Pick your inverter model, battery model (eBoost or eForce), and quantities; the tool auto-configures a topology and checks conductor currents, per-battery max discharge limits, connection-point terminal counts, and eWay node ratings. Anything out of spec turns red with a plain-language explanation.</p>';
+  html += '<p class="subtitle">This is a <strong>theoretical</strong> validator: it analyzes the worst case using the <strong>maximum rated current output</strong> of both the inverters and the batteries. Real-world operation under partial load will be less stressful than what is modeled here — so any layout that passes here has headroom in practice, and any layout that fails here will fail under the conditions it is designed to handle.</p>';
+  html += '<p class="subtitle">For education and planning only. <strong>A licensed electrician and a stamped engineering review are required before installation.</strong></p>';
   html += '</div>';
   html += '<div class="buttonRow">';
   html += '<button class="btn" data-action="demoBalanced"><span style="font-weight:700">Do not share example</span></button>';
@@ -1674,6 +1789,7 @@ document.addEventListener('click', (e) => {
     }
     case 'openFullscreen': setState({ isFigureFullscreen: true }); break;
     case 'closeFullscreen': setState({ isFigureFullscreen: false }); break;
+    case 'downloadPdf': downloadReportPdf(); break;
     case 'closeOverlay': {
       // Only close if click originated on backdrop, not inside panel
       if (el === t) setState({ isFigureFullscreen: false });
