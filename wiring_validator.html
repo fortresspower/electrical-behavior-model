@@ -95,6 +95,36 @@ const BATTERY_MAX = 250;
 const CONDUCTOR_RATING = 250;
 const MAX_BATTERY_COUNT = 24;
 const MAX_INVERTER_COUNT = 10;
+const EFORCE_MAX_BATTERY_COUNT = 32;
+const EFORCE_STACK_CURRENTS = [195, 250, 250]; // 1, 2, 3 modules
+const EFORCE_MODULE_KWH = 9.6;
+const EFORCE_NODE_RATING = 750;
+const EFORCE_TERMINAL_COUNT = 4;
+const EFORCE_FIXED_TYPE = "eforce_four_point";
+
+function getMaxBatteryCountForModel(batteryModel) {
+  return batteryModel === "eforce" ? EFORCE_MAX_BATTERY_COUNT : MAX_BATTERY_COUNT;
+}
+function getEforceStackCurrent(stackSize) {
+  const clamped = Math.max(1, Math.min(3, stackSize | 0));
+  return EFORCE_STACK_CURRENTS[clamped - 1];
+}
+function getBatteryMaxCurrent(batteryIndex, batteryModel, eforceStackSizes) {
+  if (batteryModel === "eforce") {
+    return getEforceStackCurrent((eforceStackSizes || [])[batteryIndex] || 1);
+  }
+  return BATTERY_MAX;
+}
+function getBatteryCapacityWeight(batteryIndex, batteryModel, eforceStackSizes) {
+  // Used by the share-mode current-distribution math. Current in parallel batteries
+  // distributes inversely to internal resistance, which in turn scales with module
+  // count: a 3-module stack pulls 3x the current of a 1-module stack. eBoost
+  // batteries are uniform, so the weight is 1 and the math collapses to equal share.
+  if (batteryModel === "eforce") {
+    return Math.max(1, Math.min(3, (eforceStackSizes || [])[batteryIndex] || 1));
+  }
+  return 1;
+}
 const INVERTER_MODELS = {
   envy_8kw: { label: "Envy 8kW", current: 167, maxPorts: 1, bridgedPorts: false },
   envy_10kw: { label: "Envy 10kW", current: 210, maxPorts: 1, bridgedPorts: false },
@@ -118,7 +148,10 @@ function matrix(rows, cols, fill) {
   if (fill === undefined) fill = false;
   return Array.from({ length: rows }, () => Array.from({ length: cols }, () => fill));
 }
-function getConnectionPointConfig(type) {
+function getConnectionPointConfig(type, batteryModel) {
+  if (batteryModel === "eforce") {
+    return { label: "eWay", nodeRating: EFORCE_NODE_RATING, terminalCount: EFORCE_TERMINAL_COUNT };
+  }
   switch (type) {
     case "three_point_terminal":
       return { label: "eWay", nodeRating: 750, terminalCount: 3 };
@@ -262,7 +295,9 @@ function getGroupBoundsCenter(indices, batteryPositions) {
 }
 
 // === Analyzer (ported as-is) ===
-function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, batteryConnectionTypes, inverterModelKey, batteryLayoutMode) {
+function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, batteryConnectionTypes, inverterModelKey, batteryLayoutMode, batteryModel, eforceStackSizes) {
+  batteryModel = batteryModel || "eboost";
+  eforceStackSizes = eforceStackSizes || [];
   const model = INVERTER_MODELS[inverterModelKey] || INVERTER_MODELS.envy_duo_21_envy_12kw;
   const inverterOutputCurrent = model.current;
   const maxPorts = model.maxPorts;
@@ -331,16 +366,28 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
   batteryGroupLabels.forEach((label) => observations.push(label));
   effectiveGroups.forEach((indices) => {
     const totalInflow = indices.reduce((sum, idx) => sum + nodeInflow[idx], 0);
-    const sharedLoad = indices.length === 1 ? totalInflow : totalInflow / indices.length;
-    indices.forEach((idx) => { finalBatteryLoad[idx] = sharedLoad; });
+    const totalWeight = indices.reduce((sum, idx) => sum + getBatteryCapacityWeight(idx, batteryModel, eforceStackSizes), 0);
+    if (indices.length === 1) {
+      indices.forEach((idx) => { finalBatteryLoad[idx] = totalInflow; });
+    } else if (totalWeight <= 0) {
+      indices.forEach((idx) => { finalBatteryLoad[idx] = totalInflow / indices.length; });
+    } else {
+      indices.forEach((idx) => {
+        const weight = getBatteryCapacityWeight(idx, batteryModel, eforceStackSizes);
+        finalBatteryLoad[idx] = totalInflow * weight / totalWeight;
+      });
+    }
   });
   batteryLinkGroups.forEach((indices) => {
     let prefixImbalance = 0;
     const totalInflow = indices.reduce((sum, idx) => sum + nodeInflow[idx], 0);
-    const sharedLoad = indices.length === 1 ? totalInflow : totalInflow / indices.length;
+    const totalWeight = indices.reduce((sum, idx) => sum + getBatteryCapacityWeight(idx, batteryModel, eforceStackSizes), 0);
+    const equalShare = indices.length === 1 ? totalInflow : totalInflow / indices.length;
     for (let k = 0; k < indices.length - 1; k += 1) {
       const left = indices[k];
-      prefixImbalance += nodeInflow[left] - sharedLoad;
+      const leftWeight = getBatteryCapacityWeight(left, batteryModel, eforceStackSizes);
+      const leftShare = (indices.length === 1 || totalWeight <= 0) ? equalShare : (totalInflow * leftWeight / totalWeight);
+      prefixImbalance += nodeInflow[left] - leftShare;
       linkTransfers[left] = { net: prefixImbalance };
     }
   });
@@ -370,20 +417,21 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
   });
   const batteryStatus = batteryNames.map((name, i) => {
     const appliedType = getEffectiveBatteryConnectionType(i, batteryConnectionTypes[i] || "three_point_terminal", batteryLayoutMode);
-    const config = getConnectionPointConfig(appliedType);
+    const config = getConnectionPointConfig(appliedType, batteryModel);
+    const batteryMax = getBatteryMaxCurrent(i, batteryModel, eforceStackSizes);
     const isBottomFrontStackBattery = batteryLayoutMode === "front_stacking" && isFrontStackBottomBattery(i, batteryLayoutMode);
     if (isBottomFrontStackBattery) {
       const incomingNodeCurrent = finalBatteryLoad[i];
       const maxNodeCurrent = finalBatteryLoad[i];
       const totalConnectionPointsUsed = finalBatteryLoad[i] > 1e-9 ? 1 : 0;
-      const batteryOverload = finalBatteryLoad[i] > BATTERY_MAX + 1e-9;
+      const batteryOverload = finalBatteryLoad[i] > batteryMax + 1e-9;
       const nodeOverload = incomingNodeCurrent > config.nodeRating + 1e-9;
       const terminalOveruse = totalConnectionPointsUsed > config.terminalCount;
       const inactive = finalBatteryLoad[i] <= 1e-9;
-      if (batteryOverload) risks.push(name + " absorbs " + formatAmps(finalBatteryLoad[i]) + " A, which is above its 250 A battery maximum.");
+      if (batteryOverload) risks.push(name + " absorbs " + formatAmps(finalBatteryLoad[i]) + " A, which is above its " + formatAmps(batteryMax) + " A battery maximum.");
       if (nodeOverload) risks.push(name + " connection point incoming current is " + formatAmps(incomingNodeCurrent) + " A, which is above its " + formatAmps(config.nodeRating) + " A connection-point rating.");
       if (terminalOveruse) risks.push(name + " uses " + totalConnectionPointsUsed + " power-conductor landings, but its selected connection point allows only " + config.terminalCount + ". Communication cabling is treated separately and is not counted as a power landing.");
-      return { name, finalLoad: finalBatteryLoad[i], incomingNodeCurrent, maxNodeCurrent, config, totalConnectionPointsUsed, overloaded: batteryOverload || nodeOverload || terminalOveruse, inactive };
+      return { name, finalLoad: finalBatteryLoad[i], incomingNodeCurrent, maxNodeCurrent, config, totalConnectionPointsUsed, batteryMax, overloaded: batteryOverload || nodeOverload || terminalOveruse, inactive };
     }
     const directConnectionCount = connections.reduce((sum, row) => sum + ((row || [])[i] ? 1 : 0), 0);
     const leftEnabled = i > 0 && batteryLinks[i - 1];
@@ -396,14 +444,14 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
     const incomingNodeCurrent = nodeInflow[i] + leftIncoming + rightIncoming;
     const outgoingNodeCurrent = leftOutgoing + rightOutgoing + finalBatteryLoad[i];
     const maxNodeCurrent = Math.max(incomingNodeCurrent, outgoingNodeCurrent);
-    const batteryOverload = finalBatteryLoad[i] > BATTERY_MAX + 1e-9;
+    const batteryOverload = finalBatteryLoad[i] > batteryMax + 1e-9;
     const nodeOverload = incomingNodeCurrent > config.nodeRating + 1e-9;
     const terminalOveruse = totalConnectionPointsUsed > config.terminalCount;
     const inactive = nodeInflow[i] <= 1e-9 && finalBatteryLoad[i] <= 1e-9;
-    if (batteryOverload) risks.push(name + " absorbs " + formatAmps(finalBatteryLoad[i]) + " A, which is above its 250 A battery maximum.");
+    if (batteryOverload) risks.push(name + " absorbs " + formatAmps(finalBatteryLoad[i]) + " A, which is above its " + formatAmps(batteryMax) + " A battery maximum.");
     if (nodeOverload) risks.push(name + " connection point incoming current is " + formatAmps(incomingNodeCurrent) + " A, which is above its " + formatAmps(config.nodeRating) + " A connection-point rating.");
     if (terminalOveruse) risks.push(name + " uses " + totalConnectionPointsUsed + " power-conductor landings, but its selected connection point allows only " + config.terminalCount + ". Communication cabling is treated separately and is not counted as a power landing.");
-    return { name, finalLoad: finalBatteryLoad[i], incomingNodeCurrent, maxNodeCurrent, config, totalConnectionPointsUsed, overloaded: batteryOverload || nodeOverload || terminalOveruse, inactive };
+    return { name, finalLoad: finalBatteryLoad[i], incomingNodeCurrent, maxNodeCurrent, config, totalConnectionPointsUsed, batteryMax, overloaded: batteryOverload || nodeOverload || terminalOveruse, inactive };
   });
   if (batteryLayoutMode === "front_stacking" && globalShareMode === "share") {
     const columnCount = getFrontStackColumnCount(batteryCount);
@@ -429,7 +477,8 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
     });
   }
   const totalInput = nodeInflow.reduce((a, b) => a + b, 0);
-  const batteryCapacity = batteryCount * BATTERY_MAX;
+  let batteryCapacity = 0;
+  for (let i = 0; i < batteryCount; i += 1) batteryCapacity += getBatteryMaxCurrent(i, batteryModel, eforceStackSizes);
   if (totalInput > batteryCapacity + 1e-9) {
     risks.push("Total inverter current is " + formatAmps(totalInput) + " A, while total battery capacity is " + formatAmps(batteryCapacity) + " A.");
   }
@@ -478,11 +527,15 @@ const state = {
   inverterModel: "envy_duo_21_envy_12kw",
   isFigureFullscreen: false,
   batteryLayoutMode: "side_by_side",
+  batteryModel: "eboost",
+  eforceStackSizes: [2, 2, 2],
+  eforceModuleCount: 6,
   configurationMode: "none",
 };
 
 // Track open/closed state of <details> sections so re-renders don't collapse them.
 const detailsOpen = {
+  chooseBattery: true,
   step1: true,
   step2: true,
   autoConfig: true,
@@ -500,7 +553,7 @@ function setState(patch) {
 // === Actions (mutate state and re-render) ===
 function resizeSystem(newInv, newBat) {
   const inv = clampCount(newInv, MAX_INVERTER_COUNT);
-  const bat = clampCount(newBat, MAX_BATTERY_COUNT);
+  const bat = clampCount(newBat, getMaxBatteryCountForModel(state.batteryModel));
   const prevConn = state.connections;
   const nextConn = matrix(inv, bat, false);
   for (let i = 0; i < Math.min(inv, prevConn.length); i += 1) {
@@ -510,13 +563,90 @@ function resizeSystem(newInv, newBat) {
   const nextLinks = Array(Math.max(0, bat - 1)).fill(false);
   for (let i = 0; i < Math.min(nextLinks.length, prevLinks.length); i += 1) nextLinks[i] = prevLinks[i];
   const prevTypes = state.batteryConnectionTypes;
-  const nextTypes = Array(bat).fill("three_point_terminal");
+  const defaultType = state.batteryModel === "eforce" ? EFORCE_FIXED_TYPE : "three_point_terminal";
+  const nextTypes = Array(bat).fill(defaultType);
   for (let i = 0; i < Math.min(bat, prevTypes.length); i += 1) nextTypes[i] = prevTypes[i];
+  const prevStacks = state.eforceStackSizes || [];
+  const nextStacks = Array(bat).fill(2);
+  for (let i = 0; i < Math.min(bat, prevStacks.length); i += 1) nextStacks[i] = prevStacks[i] || 2;
   state.inverterCount = inv;
   state.batteryCount = bat;
   state.connections = nextConn;
   state.batteryLinks = nextLinks;
   state.batteryConnectionTypes = nextTypes;
+  state.eforceStackSizes = nextStacks;
+  reapplyAutoConfigIfNeeded();
+  scheduleRender();
+}
+
+function computeEforceStackArrangement(moduleCount, inverterCount) {
+  // Pack `moduleCount` 9.6 kWh modules into stacks of 1/2/3 modules each.
+  // Rule: minimize stack count by preferring 3-module stacks, but also create
+  // at least min(inverterCount, moduleCount) stacks so the bus has somewhere
+  // for each inverter to land when modules allow.
+  if (moduleCount <= 0) return [];
+  const M = moduleCount;
+  const I = Math.max(0, inverterCount | 0);
+  const S = Math.max(Math.ceil(M / 3), Math.min(I, M));
+  const E = M - S;
+  const triples = Math.max(0, E - S);
+  const singles = Math.max(0, S - E);
+  const doubles = S - triples - singles;
+  const sizes = [];
+  for (let k = 0; k < triples; k += 1) sizes.push(3);
+  for (let k = 0; k < doubles; k += 1) sizes.push(2);
+  for (let k = 0; k < singles; k += 1) sizes.push(1);
+  return sizes;
+}
+
+function setEforceModuleCount(moduleCount) {
+  // Clamp to 1..32 modules and re-pack stacks per the auto-arrange rule.
+  const clamped = Math.max(1, Math.min(EFORCE_MAX_BATTERY_COUNT, moduleCount | 0));
+  state.eforceModuleCount = clamped;
+  autoArrangeEforceStacks();
+}
+
+function autoArrangeEforceStacks() {
+  // Recompute stack sizes from state.eforceModuleCount and adjust batteryCount.
+  const sizes = computeEforceStackArrangement(state.eforceModuleCount, state.inverterCount);
+  const S = sizes.length;
+  resizeSystem(state.inverterCount, S);
+  state.eforceStackSizes = sizes;
+  reapplyAutoConfigIfNeeded();
+  scheduleRender();
+}
+
+function splitLargestEforceStack() {
+  // Manual override: take one module off the largest stack and start a new
+  // 1-module stack. Total module count stays the same; stack count grows by 1.
+  // Useful when the auto-arranged shape (which minimizes stack count) leaves
+  // an oversized stack that pulls too much current under proportional share.
+  if (state.batteryCount >= EFORCE_MAX_BATTERY_COUNT) return;
+  const sizes = (state.eforceStackSizes || []).slice();
+  let maxIdx = -1;
+  let maxSize = 1;
+  for (let i = 0; i < sizes.length; i += 1) {
+    if (sizes[i] > maxSize) { maxSize = sizes[i]; maxIdx = i; }
+  }
+  if (maxIdx === -1) return; // every stack is already a single module; can't split further
+  sizes[maxIdx] -= 1;
+  sizes.push(1);
+  const newBatteryCount = sizes.length;
+  resizeSystem(state.inverterCount, newBatteryCount);
+  state.eforceStackSizes = sizes;
+  state.eforceModuleCount = sizes.reduce((sum, n) => sum + n, 0);
+  reapplyAutoConfigIfNeeded();
+  scheduleRender();
+}
+
+function setEforceStackSize(index, size) {
+  // Manual override of a single stack's height. Updates moduleCount to the new sum.
+  const clamped = Math.max(1, Math.min(3, size | 0));
+  const next = (state.eforceStackSizes || []).slice();
+  while (next.length < state.batteryCount) next.push(2);
+  if (index >= 0 && index < next.length) next[index] = clamped;
+  state.eforceStackSizes = next;
+  state.eforceModuleCount = next.reduce((sum, n) => sum + n, 0);
   reapplyAutoConfigIfNeeded();
   scheduleRender();
 }
@@ -618,10 +748,12 @@ function upgradeBatteryConnectionTypes(connections, batteryLinks, baseTypes, bat
 function applyShareConfiguration(layoutModeOverride) {
   const inv = state.inverterCount, bat = state.batteryCount;
   const maxPorts = (INVERTER_MODELS[state.inverterModel] || {}).maxPorts || 1;
+  const isEforce = state.batteryModel === "eforce";
+  const defaultType = isEforce ? EFORCE_FIXED_TYPE : "three_point_terminal";
   const nextConnections = matrix(inv, bat, false);
   const nextBatteryLinks = Array(Math.max(0, bat - 1)).fill(true);
-  const nextBatteryConnectionTypes = Array(bat).fill("three_point_terminal");
-  if (layoutModeOverride === "front_stacking") {
+  const nextBatteryConnectionTypes = Array(bat).fill(defaultType);
+  if (layoutModeOverride === "front_stacking" && !isEforce) {
     const columnCount = getFrontStackColumnCount(bat);
     for (let column = 0; column < columnCount; column += 1) {
       const bottomIndex = getBottomBatteryIndexForColumn(column, bat);
@@ -642,16 +774,21 @@ function applyShareConfiguration(layoutModeOverride) {
   }
   state.connections = nextConnections;
   state.batteryLinks = nextBatteryLinks;
-  state.batteryConnectionTypes = upgradeBatteryConnectionTypes(nextConnections, nextBatteryLinks, nextBatteryConnectionTypes, layoutModeOverride);
+  // eForce uses a single fixed connection point — no upgrade/downgrade allowed.
+  state.batteryConnectionTypes = isEforce
+    ? nextBatteryConnectionTypes
+    : upgradeBatteryConnectionTypes(nextConnections, nextBatteryLinks, nextBatteryConnectionTypes, layoutModeOverride);
 }
 
 function applyDoNotShareConfiguration(layoutModeOverride) {
   const inv = state.inverterCount, bat = state.batteryCount;
+  const isEforce = state.batteryModel === "eforce";
+  const defaultType = isEforce ? EFORCE_FIXED_TYPE : "three_point_terminal";
   const nextConnections = matrix(inv, bat, false);
   const nextBatteryLinks = Array(Math.max(0, bat - 1)).fill(false);
-  const nextBatteryConnectionTypes = Array(bat).fill("three_point_terminal");
+  const nextBatteryConnectionTypes = Array(bat).fill(defaultType);
   const maxPorts = (INVERTER_MODELS[state.inverterModel] || {}).maxPorts || 1;
-  if (layoutModeOverride === "front_stacking") {
+  if (layoutModeOverride === "front_stacking" && !isEforce) {
     const columnCount = getFrontStackColumnCount(bat);
     for (let column = 0; column < columnCount; column += 1) {
       const bottomIndex = getBottomBatteryIndexForColumn(column, bat);
@@ -713,7 +850,9 @@ function applyDoNotShareConfiguration(layoutModeOverride) {
   }
   state.connections = nextConnections;
   state.batteryLinks = nextBatteryLinks;
-  state.batteryConnectionTypes = upgradeBatteryConnectionTypes(nextConnections, nextBatteryLinks, nextBatteryConnectionTypes, layoutModeOverride);
+  state.batteryConnectionTypes = isEforce
+    ? nextBatteryConnectionTypes
+    : upgradeBatteryConnectionTypes(nextConnections, nextBatteryLinks, nextBatteryConnectionTypes, layoutModeOverride);
 }
 
 function reapplyAutoConfigIfNeeded() {
@@ -732,6 +871,8 @@ function autoConfigureDoNotShareBattery() {
   scheduleRender();
 }
 function setBatteryLayoutMode(mode) {
+  // eForce only supports side-by-side; ignore front-stacking attempts.
+  if (state.batteryModel === "eforce" && mode === "front_stacking") return;
   state.batteryLayoutMode = mode;
   reapplyAutoConfigIfNeeded();
   scheduleRender();
@@ -739,6 +880,29 @@ function setBatteryLayoutMode(mode) {
 function setInverterModel(model) {
   state.inverterModel = model;
   reapplyAutoConfigIfNeeded();
+  scheduleRender();
+}
+function setBatteryModel(model) {
+  if (state.batteryModel === model) return;
+  state.batteryModel = model;
+  if (model === "eforce") {
+    // Force side-by-side; eForce doesn't permit front-stacking.
+    state.batteryLayoutMode = "side_by_side";
+    // Fix every battery's connection type to the single eForce eWay.
+    state.batteryConnectionTypes = state.batteryConnectionTypes.map(() => EFORCE_FIXED_TYPE);
+    // Seed stack sizes (default 2 modules each) and derive module count.
+    const stacks = (state.eforceStackSizes || []).slice();
+    while (stacks.length < state.batteryCount) stacks.push(2);
+    state.eforceStackSizes = stacks.slice(0, state.batteryCount);
+    state.eforceModuleCount = state.eforceStackSizes.reduce((sum, n) => sum + n, 0);
+  } else if (model === "eboost") {
+    // Coming back from eForce: reset all batteries to the default eWay tier.
+    state.batteryConnectionTypes = state.batteryConnectionTypes.map((t) => (t === EFORCE_FIXED_TYPE ? "three_point_terminal" : t));
+  }
+  // Clamp battery count to the new model's max.
+  const maxBat = getMaxBatteryCountForModel(model);
+  if (state.batteryCount > maxBat) resizeSystem(state.inverterCount, maxBat);
+  else reapplyAutoConfigIfNeeded();
   scheduleRender();
 }
 
@@ -791,7 +955,8 @@ function buildSvg(state, results) {
   const isFrontStacking = state.batteryLayoutMode === "front_stacking";
   const stackingColumns = isFrontStacking ? Math.ceil(batteryCount / 2) : batteryCount;
   const diagramWidth = Math.max(860, Math.max(inverterCount, stackingColumns) * 170 + 240);
-  const diagramHeight = isFrontStacking ? 560 : 440;
+  const isEforceLayout = state.batteryModel === "eforce";
+  const diagramHeight = isFrontStacking ? 560 : (isEforceLayout ? 470 : 440);
   const inverterY = 90;
   const batteryTopY = isFrontStacking ? 250 : diagramHeight - 170;
   const batteryBottomY = isFrontStacking ? 390 : batteryTopY;
@@ -1016,23 +1181,65 @@ function buildSvg(state, results) {
   });
 
   // Battery boxes
+  const isEforceMode = state.batteryModel === 'eforce';
   batteryPositions.forEach((item, i) => {
     const status = results.batteryStatus[i];
     const active = !status.inactive;
     const commGroup = results.communicationGroups.find((g) => g.batteries.indexOf(i) !== -1);
     const isPrimaryBattery = commGroup ? commGroup.batteries[0] === i : (i === 0 || !state.batteryLinks[i - 1]);
     const opacity = active ? 1 : 0.35;
-    const fill = status.overloaded ? "#fee2e2" : "#ecfccb";
-    const stroke = status.overloaded ? "#dc2626" : "#65a30d";
+    const overloadStroke = status.overloaded ? "#dc2626" : "#65a30d";
+    const overloadFill = status.overloaded ? "#fee2e2" : "#ecfccb";
+    const stackSize = isEforceMode ? Math.max(1, Math.min(3, (state.eforceStackSizes || [])[i] || 1)) : 1;
+    const batteryMaxA = isEforceMode ? getBatteryMaxCurrent(i, 'eforce', state.eforceStackSizes) : 250;
     svg += '<g opacity="' + opacity + '">';
-    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 118) + '" text-anchor="middle" style="fill:#64748b;font-size:10px;font-weight:700">' + (isPrimaryBattery ? "Primary" : "Secondary") + '</text>';
-    svg += '<rect x="' + item.x + '" y="' + item.y + '" width="128" height="102" rx="10" fill="' + fill + '" stroke="' + stroke + '" stroke-width="2.5"/>';
-    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 18) + '" text-anchor="middle" style="fill:#0f172a;font-size:14px;font-weight:700">' + escapeHtml(item.name) + '</text>';
-    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 32) + '" text-anchor="middle" style="fill:#475569;font-size:10px;font-weight:700">' + escapeHtml(status.config.label) + '</text>';
-    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 46) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">Current at the Node:</text>';
-    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 60) + '" text-anchor="middle" style="fill:#475569;font-size:11px">' + formatAmps(status.incomingNodeCurrent) + ' / Max ' + formatAmps(status.config.nodeRating) + 'A</text>';
-    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 74) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">Max Bat Discharge:</text>';
-    svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 88) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">250A</text>';
+    const primaryY = isEforceMode ? item.y + 134 : item.y + 118;
+    svg += '<text x="' + (item.x + 64) + '" y="' + primaryY + '" text-anchor="middle" style="fill:#64748b;font-size:10px;font-weight:700">' + (isPrimaryBattery ? "Primary" : "Secondary") + '</text>';
+
+    if (isEforceMode) {
+      // eWay band at the top — separate visual element, slightly darker, with name + node load.
+      const ewayX = item.x;
+      const ewayY = item.y;
+      const ewayW = 128;
+      const ewayH = 26;
+      svg += '<rect x="' + ewayX + '" y="' + ewayY + '" width="' + ewayW + '" height="' + ewayH + '" rx="6" fill="#cbd5e1" stroke="' + overloadStroke + '" stroke-width="2"/>';
+      svg += '<text x="' + (ewayX + 8) + '" y="' + (ewayY + 11) + '" style="fill:#0f172a;font-size:10px;font-weight:700">' + escapeHtml(item.name) + '</text>';
+      svg += '<text x="' + (ewayX + 8) + '" y="' + (ewayY + 22) + '" style="fill:#475569;font-size:9px">eWay · ' + formatAmps(status.config.nodeRating) + 'A Max</text>';
+      svg += '<text x="' + (ewayX + ewayW - 8) + '" y="' + (ewayY + 11) + '" text-anchor="end" style="fill:#0f172a;font-size:10px;font-weight:700">' + formatAmps(status.incomingNodeCurrent) + 'A</text>';
+      svg += '<text x="' + (ewayX + ewayW - 8) + '" y="' + (ewayY + 22) + '" text-anchor="end" style="fill:#0f172a;font-size:9px;font-weight:700">at node</text>';
+
+      // Modules section: distinct square blocks for each module, stacked vertically.
+      const modulesAreaY = item.y + ewayH + 4;
+      const modulesAreaH = 102 - ewayH - 4; // 72h total for modules
+      const moduleGap = 2;
+      const totalGap = moduleGap * (stackSize - 1);
+      const moduleH = Math.max(12, Math.floor((modulesAreaH - totalGap) / stackSize));
+      for (let m = 0; m < stackSize; m += 1) {
+        const modY = modulesAreaY + m * (moduleH + moduleGap);
+        svg += '<rect x="' + (item.x + 6) + '" y="' + modY + '" width="116" height="' + moduleH + '" rx="4" fill="' + overloadFill + '" stroke="' + overloadStroke + '" stroke-width="1.5"/>';
+        // Lego-style studs along the top of each module
+        const studCount = 4;
+        for (let s = 0; s < studCount; s += 1) {
+          const studX = item.x + 22 + s * 24;
+          svg += '<circle cx="' + studX + '" cy="' + modY + '" r="2.5" fill="' + overloadStroke + '" opacity="0.6"/>';
+        }
+        // Module label (module index from bottom: M1, M2, M3)
+        if (moduleH >= 16) {
+          svg += '<text x="' + (item.x + 64) + '" y="' + (modY + moduleH / 2 + 3) + '" text-anchor="middle" style="fill:#475569;font-size:9px;font-weight:700">M' + (stackSize - m) + ' · 9.6 kWh</text>';
+        }
+      }
+      // Per-stack load + max underneath the modules (just above the Primary/Secondary tag at y+118)
+      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 118) + '" text-anchor="middle" style="fill:#0f172a;font-size:10px;font-weight:700">' + formatAmps(status.finalLoad) + ' / ' + formatAmps(batteryMaxA) + 'A max</text>';
+    } else {
+      // eBoost rendering unchanged
+      svg += '<rect x="' + item.x + '" y="' + item.y + '" width="128" height="102" rx="10" fill="' + overloadFill + '" stroke="' + overloadStroke + '" stroke-width="2.5"/>';
+      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 18) + '" text-anchor="middle" style="fill:#0f172a;font-size:14px;font-weight:700">' + escapeHtml(item.name) + '</text>';
+      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 32) + '" text-anchor="middle" style="fill:#475569;font-size:10px;font-weight:700">' + escapeHtml(status.config.label) + '</text>';
+      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 46) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">Current at the Node:</text>';
+      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 60) + '" text-anchor="middle" style="fill:#475569;font-size:11px">' + formatAmps(status.incomingNodeCurrent) + ' / Max ' + formatAmps(status.config.nodeRating) + 'A</text>';
+      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 74) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">Max Bat Discharge:</text>';
+      svg += '<text x="' + (item.x + 64) + '" y="' + (item.y + 88) + '" text-anchor="middle" style="fill:#64748b;font-size:10px">250A</text>';
+    }
     svg += '</g>';
   });
 
@@ -1089,6 +1296,15 @@ function buildSetupPanel(state, results) {
   html += '<div class="panelHeader">System setup</div>';
   html += '<div class="setupBody">';
 
+  // Choose Battery
+  html += '<details class="section"' + (detailsOpen.chooseBattery ? ' open' : '') + ' data-details-key="chooseBattery">';
+  html += '<summary>Choose Battery</summary>';
+  html += '<div class="configButtonRow">';
+  html += '<button class="btn' + (state.batteryModel === 'eboost' ? ' active' : '') + '" data-action="setBatteryEboost">eBoost</button>';
+  html += '<button class="btn' + (state.batteryModel === 'eforce' ? ' active' : '') + '" data-action="setBatteryEforce">eForce</button>';
+  html += '</div>';
+  html += '</details>';
+
   // Step 1
   html += '<details class="section"' + (detailsOpen.step1 ? ' open' : '') + ' data-details-key="step1">';
   html += '<summary>Step 1. Choose inverter model</summary>';
@@ -1103,6 +1319,8 @@ function buildSetupPanel(state, results) {
   html += '</details>';
 
   // Step 2
+  const eforceMode = state.batteryModel === 'eforce';
+  const eforceModules = eforceMode ? (state.eforceModuleCount || 1) : 0;
   html += '<details class="section"' + (detailsOpen.step2 ? ' open' : '') + ' data-details-key="step2">';
   html += '<summary>Step 2. Choose the number of devices.</summary>';
   html += '<div class="twoCol">';
@@ -1113,14 +1331,55 @@ function buildSetupPanel(state, results) {
   html += '<input class="input" data-action="invInput" value="' + inv + '"/>';
   html += '<button class="smallButton" data-action="invPlus">+</button>';
   html += '</div></div>';
-  html += '<div>';
-  html += '<label class="subFieldLabel">Number of batteries</label>';
-  html += '<div class="row">';
-  html += '<button class="smallButton" data-action="batMinus">−</button>';
-  html += '<input class="input" data-action="batInput" value="' + bat + '"/>';
-  html += '<button class="smallButton" data-action="batPlus">+</button>';
-  html += '</div></div>';
+  if (eforceMode) {
+    html += '<div>';
+    html += '<label class="subFieldLabel">Number of eForce batteries (modules, 1–32)</label>';
+    html += '<div class="row">';
+    html += '<button class="smallButton" data-action="eforceModMinus">−</button>';
+    html += '<input class="input" data-action="eforceModInput" value="' + eforceModules + '"/>';
+    html += '<button class="smallButton" data-action="eforceModPlus">+</button>';
+    html += '</div>';
+    html += '<div class="helper">Each module is 9.6 kWh. Auto-arrange packs them into stacks of 1–3.</div>';
+    html += '</div>';
+  } else {
+    html += '<div>';
+    html += '<label class="subFieldLabel">Number of batteries</label>';
+    html += '<div class="row">';
+    html += '<button class="smallButton" data-action="batMinus">−</button>';
+    html += '<input class="input" data-action="batInput" value="' + bat + '"/>';
+    html += '<button class="smallButton" data-action="batPlus">+</button>';
+    html += '</div></div>';
+  }
   html += '</div>';
+  if (eforceMode) {
+    html += '<div style="margin-top:14px">';
+    html += '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">';
+    html += '<label class="subFieldLabel" style="margin:0">Stack arrangement</label>';
+    html += '<div style="display:flex;gap:6px;align-items:center">';
+    const canSplit = bat < EFORCE_MAX_BATTERY_COUNT && (state.eforceStackSizes || []).some((s) => s > 1);
+    const splitDisabled = canSplit ? '' : ' disabled';
+    const splitOpacity = canSplit ? '' : ';opacity:0.4;cursor:not-allowed';
+    html += '<button class="btn" style="padding:4px 10px' + splitOpacity + '" data-action="splitEforceStack" title="Split the largest stack into two by peeling off one module"' + splitDisabled + '>+ Split largest</button>';
+    html += '<button class="btn" data-action="autoArrangeStacks">Auto-arrange stacks</button>';
+    html += '</div>';
+    html += '</div>';
+    html += '<div class="helper" style="margin-bottom:8px">' + bat + ' stack' + (bat === 1 ? '' : 's') + ' • ' + eforceModules + ' module' + (eforceModules === 1 ? '' : 's') + ' • ' + (eforceModules * EFORCE_MODULE_KWH).toFixed(1) + ' kWh total. Click 1/2/3 below to override an individual stack.</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">';
+    for (let i = 0; i < bat; i += 1) {
+      const size = (state.eforceStackSizes || [])[i] || 1;
+      const maxA = getEforceStackCurrent(size);
+      html += '<div style="display:flex;align-items:center;gap:6px;font-size:12px">';
+      html += '<span style="min-width:46px;font-weight:600">B' + (i + 1) + '</span>';
+      [1, 2, 3].forEach((n) => {
+        const active = size === n ? ' active' : '';
+        html += '<button class="btn' + active + '" style="padding:2px 8px;font-size:11px;min-width:0" data-action="eforceStack" data-idx="' + i + '" data-n="' + n + '">' + n + '</button>';
+      });
+      html += '<span class="helper" style="margin-left:4px">' + maxA + 'A</span>';
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '</div>';
+  }
   html += '</details>';
 
   // Auto config
@@ -1133,12 +1392,18 @@ function buildSetupPanel(state, results) {
   html += '</div>';
   html += '<div class="configButtonRow" style="margin-top:8px">';
   html += '<button class="btn' + (state.batteryLayoutMode === 'side_by_side' ? ' active' : '') + '" data-action="layoutSide">Side to side</button>';
-  html += '<button class="btn' + (state.batteryLayoutMode === 'front_stacking' ? ' active' : '') + '" data-action="layoutFront">Front stacking</button>';
+  if (!eforceMode) {
+    html += '<button class="btn' + (state.batteryLayoutMode === 'front_stacking' ? ' active' : '') + '" data-action="layoutFront">Front stacking</button>';
+  }
   html += '</div>';
   html += '<div class="helper">Share battery will auto-configure a shared battery layout using eWay connection points, enable all adjacent battery conductors, and center the inverter landings on a contiguous battery window whenever possible so the unused batteries are balanced at both extremes, without automatically expanding to eWay Pro.</div>';
   html += '<div class="helper">Do not share battery will auto-configure proportional contiguous battery groups per inverter, make sure no battery is left unused, and use battery-to-battery conductors within each isolated group while keeping different inverter groups electrically separate.</div>';
-  html += '<div class="helper">Layout view changes only the drawing. Share and Do Not Share battery rules stay the same.</div>';
-  html += '<div class="helper">In front stacking, the lower battery in each stack is treated as eWay Lite and is fed from the eWay battery above it.</div>';
+  if (!eforceMode) {
+    html += '<div class="helper">Layout view changes only the drawing. Share and Do Not Share battery rules stay the same.</div>';
+    html += '<div class="helper">In front stacking, the lower battery in each stack is treated as eWay Lite and is fed from the eWay battery above it.</div>';
+  } else {
+    html += '<div class="helper">eForce uses a fixed 4-terminal eWay connection point (750 A node rating). Auto-config does not change connection-point type. Front stacking is not available for eForce.</div>';
+  }
   html += '</details>';
 
   // Manual config
@@ -1170,22 +1435,31 @@ function buildSetupPanel(state, results) {
   // Battery connection points
   html += '<details class="section"' + (detailsOpen.manualBattConn ? ' open' : '') + ' data-details-key="manualBattConn" style="margin-top:8px">';
   html += '<summary>Battery connection points</summary>';
+  const isEforce = state.batteryModel === 'eforce';
   results.batteryNames.forEach((name, i) => {
-    const appliedType = getEffectiveBatteryConnectionType(i, state.batteryConnectionTypes[i] || 'three_point_terminal', state.batteryLayoutMode);
-    const config = getConnectionPointConfig(appliedType);
-    const lockedFrontStackLite = isFrontStackBottomBattery(i, state.batteryLayoutMode);
+    const appliedType = isEforce ? EFORCE_FIXED_TYPE : getEffectiveBatteryConnectionType(i, state.batteryConnectionTypes[i] || 'three_point_terminal', state.batteryLayoutMode);
+    const config = getConnectionPointConfig(appliedType, state.batteryModel);
+    const lockedFrontStackLite = !isEforce && isFrontStackBottomBattery(i, state.batteryLayoutMode);
+    const lockedEforce = isEforce;
     html += '<div class="bpRow">';
     html += '<div>';
     html += '<div class="bpRowName">' + escapeHtml(name) + '</div>';
-    html += '<div class="helper">' + escapeHtml(config.label) + ' • Max ' + formatAmps(config.nodeRating) + ' A node rating • ' + config.terminalCount + ' landing' + (config.terminalCount > 1 ? 's' : '') + (lockedFrontStackLite ? ' • fixed by front stacking' : '') + '</div>';
+    html += '<div class="helper">' + escapeHtml(config.label) + ' • Max ' + formatAmps(config.nodeRating) + ' A node rating • ' + config.terminalCount + ' landing' + (config.terminalCount > 1 ? 's' : '')
+      + (lockedFrontStackLite ? ' • fixed by front stacking' : '')
+      + (lockedEforce ? ' • fixed for eForce' : '')
+      + '</div>';
     html += '</div>';
-    const disabled = lockedFrontStackLite ? ' disabled' : '';
-    const opacityStyle = lockedFrontStackLite ? ';opacity:0.7' : '';
+    const disabled = (lockedFrontStackLite || lockedEforce) ? ' disabled' : '';
+    const opacityStyle = (lockedFrontStackLite || lockedEforce) ? ';opacity:0.7' : '';
     html += '<select class="select" style="width:140px' + opacityStyle + '" data-action="changeBatType" data-idx="' + i + '"' + disabled + '>';
+    if (lockedEforce) {
+      html += '<option value="' + EFORCE_FIXED_TYPE + '" selected>eWay</option>';
+    } else {
     [['single_point_terminal', 'eWay Lite'], ['three_point_terminal', 'eWay'], ['six_point_busbar', 'eWay Pro']].forEach((opt) => {
       const sel = appliedType === opt[0] ? ' selected' : '';
       html += '<option value="' + opt[0] + '"' + sel + '>' + opt[1] + '</option>';
     });
+    }
     html += '</select>';
     html += '</div>';
   });
@@ -1215,7 +1489,8 @@ function buildSetupPanel(state, results) {
 }
 
 function buildResultsPanel(state, results) {
-  const totalBatteryDischarge = state.batteryCount * BATTERY_MAX;
+  let totalBatteryDischarge = 0;
+  for (let i = 0; i < state.batteryCount; i += 1) totalBatteryDischarge += getBatteryMaxCurrent(i, state.batteryModel, state.eforceStackSizes);
   const overloadBadge = badge(results.risks.length === 0 ? 'good' : 'bad', results.risks.length === 0 ? 'No overload' : 'Overload present');
   const alarmBadge = results.alarms.length > 0 ? badge('bad', 'Alarm present') : '';
   const obsBadge = badge('warn', 'System observations');
@@ -1260,16 +1535,18 @@ function buildResultsPanel(state, results) {
 
   // Battery cards
   html += '<div class="cards" style="margin-top:16px">';
-  results.batteryStatus.forEach((status) => {
-    const percent = Math.min(100, (status.finalLoad / BATTERY_MAX) * 100);
+  results.batteryStatus.forEach((status, idx) => {
+    const batteryMax = status.batteryMax || getBatteryMaxCurrent(idx, state.batteryModel, state.eforceStackSizes);
+    const percent = Math.min(100, (status.finalLoad / Math.max(1, batteryMax)) * 100);
     const cardCls = status.overloaded ? 'cardRed' : status.inactive ? 'cardYellow' : 'card';
     const statusBadge = badge(status.overloaded ? 'bad' : status.inactive ? 'warn' : 'good', status.overloaded ? 'Overloaded' : status.inactive ? 'Idle' : 'Within limit');
     const fillColor = status.overloaded ? '#ef4444' : status.inactive ? '#eab308' : '#0f172a';
+    const stackInfo = state.batteryModel === 'eforce' ? ' • ' + (state.eforceStackSizes[idx] || 1) + '× 9.6kWh' : '';
     html += '<div class="' + cardCls + '">';
-    html += '<div class="cardHeader"><div class="cardName">' + escapeHtml(status.name) + '</div>' + statusBadge + '</div>';
+    html += '<div class="cardHeader"><div class="cardName">' + escapeHtml(status.name) + escapeHtml(stackInfo) + '</div>' + statusBadge + '</div>';
     html += '<div class="cardLine">Connection point: ' + escapeHtml(status.config.label) + '</div>';
     html += '<div class="cardLine">Incoming current at node: ' + formatAmps(status.incomingNodeCurrent) + ' A</div>';
-    html += '<div class="cardLine">Max Discharge: 250A</div>';
+    html += '<div class="cardLine">Max Discharge: ' + formatAmps(batteryMax) + 'A</div>';
     html += '<div class="cardSmall">Power landings used: ' + status.totalConnectionPointsUsed + ' / ' + status.config.terminalCount + '</div>';
     html += '<div class="progress"><div style="width:' + percent + '%;height:100%;background:' + fillColor + '"></div></div>';
     html += '</div>';
@@ -1304,7 +1581,9 @@ function render() {
     state.batteryLinks,
     state.batteryConnectionTypes,
     state.inverterModel,
-    state.batteryLayoutMode
+    state.batteryLayoutMode,
+    state.batteryModel,
+    state.eforceStackSizes
   );
 
   let html = '';
@@ -1375,6 +1654,18 @@ document.addEventListener('click', (e) => {
     case 'autoDoNotShare': autoConfigureDoNotShareBattery(); break;
     case 'layoutSide': setBatteryLayoutMode('side_by_side'); break;
     case 'layoutFront': setBatteryLayoutMode('front_stacking'); break;
+    case 'setBatteryEboost': setBatteryModel('eboost'); break;
+    case 'setBatteryEforce': setBatteryModel('eforce'); break;
+    case 'eforceStack': {
+      const idx = parseInt(el.getAttribute('data-idx'), 10);
+      const n = parseInt(el.getAttribute('data-n'), 10);
+      setEforceStackSize(idx, n);
+      break;
+    }
+    case 'eforceModMinus': setEforceModuleCount((state.eforceModuleCount || 1) - 1); break;
+    case 'eforceModPlus': setEforceModuleCount((state.eforceModuleCount || 1) + 1); break;
+    case 'autoArrangeStacks': autoArrangeEforceStacks(); break;
+    case 'splitEforceStack': splitLargestEforceStack(); break;
     case 'toggleConn': {
       const i = parseInt(el.getAttribute('data-i'), 10);
       const j = parseInt(el.getAttribute('data-j'), 10);
@@ -1409,6 +1700,8 @@ document.addEventListener('change', (e) => {
     resizeSystem(t.value, state.batteryCount);
   } else if (action === 'batInput') {
     resizeSystem(state.inverterCount, t.value);
+  } else if (action === 'eforceModInput') {
+    setEforceModuleCount(parseInt(t.value, 10));
   }
 });
 
