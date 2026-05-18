@@ -77,8 +77,9 @@ body { background: #f8fafc; color: #0f172a; font-family: Arial, sans-serif; }
 .legend { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #475569; }
 .legendItem { display: flex; align-items: center; gap: 8px; }
 .swatchBlack { width: 28px; height: 0; border-top: 3px solid #000000; }
-.swatchBlue { width: 28px; height: 0; border-top: 2px dashed #2563eb; }
-.swatchMustard { width: 28px; height: 0; border-top: 2px dashed #d4a017; }
+.swatchBlue { width: 28px; height: 0; border-top: 3px dashed #2563eb; }
+.swatchMustard { width: 28px; height: 0; border-top: 3px dashed #d4a017; }
+.swatchGreen { width: 28px; height: 0; border-top: 3px dashed #16a34a; }
 .figureHeaderRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 0 16px; }
 .overlayBackdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); z-index: 1000; padding: 20px; box-sizing: border-box; overflow: auto; }
 .overlayPanel { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 10px 30px rgba(15,23,42,0.18); min-height: calc(100vh - 40px); }
@@ -1173,6 +1174,22 @@ function buildSvg(state, results) {
   const totalInverterCurrentA = inverterCount * selectedCurrent;
   const externalBusbarRatingA = Math.round(totalInverterCurrentA * 1.2);
   const eflexBusbarRatingA = EFLEX_BUSBAR_RATING;
+
+  // Highlight the cable that lands on each primary battery — the one that
+  // carries the inverter feed into its comm group. Drawn green.
+  const primaryBatterySet = new Set();
+  (results.communicationGroups || []).forEach((grp) => {
+    if (grp && grp.batteries && grp.batteries.length > 0) primaryBatterySet.add(grp.batteries[0]);
+  });
+  if (primaryBatterySet.size === 0) {
+    for (let j = 0; j < batteryCount; j += 1) {
+      if (j === 0 || !state.batteryLinks[j - 1]) primaryBatterySet.add(j);
+    }
+  }
+  const isPrimaryTarget = (j) => primaryBatterySet.has(j);
+  const COMM_PRIMARY_COLOR = "#16a34a";  // green dashed — primary battery to inverter
+  const COMM_DEFAULT_COLOR = "#2563eb";   // blue dashed — every other comm cable
+  const commColorFor = (j) => isPrimaryTarget(j) ? COMM_PRIMARY_COLOR : COMM_DEFAULT_COLOR;
   if (isExternalBusbarMode) {
     // Regular Busbar: one bar per effective battery group (each isolated group
     // gets its own busbar segment when in do-not-share). Each segment's rating
@@ -1283,7 +1300,8 @@ function buildSvg(state, results) {
         if (!enabled) return;
         const from = inverterPositions[i];
         const to = batteryPositions[j];
-        svg += '<line x1="' + (from.x + 70) + '" y1="' + (from.y + 62) + '" x2="' + (to.x + 90) + '" y2="' + (to.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+        // Green dashed when this is the primary battery for its comm group; blue dashed otherwise.
+        svg += '<line x1="' + (from.x + 70) + '" y1="' + (from.y + 62) + '" x2="' + (to.x + 90) + '" y2="' + (to.y - 6) + '" stroke="' + commColorFor(j) + '" stroke-width="1.5" stroke-dasharray="6 5"/>';
       });
     });
     results.autoCommBatteryLinks.forEach((enabled, i) => {
@@ -1298,7 +1316,8 @@ function buildSvg(state, results) {
   if (isFrontStackShared && inverterPositions[0] && batteryPositions[0]) {
     const inv0 = inverterPositions[0];
     const bat0 = batteryPositions[0];
-    svg += '<line x1="' + (inv0.x + 70) + '" y1="' + (inv0.y + 62) + '" x2="' + (bat0.x + 90) + '" y2="' + (bat0.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+    // Battery 0 is the primary in front-stack shared mode → green dashed.
+    svg += '<line x1="' + (inv0.x + 70) + '" y1="' + (inv0.y + 62) + '" x2="' + (bat0.x + 90) + '" y2="' + (bat0.y - 6) + '" stroke="' + commColorFor(0) + '" stroke-width="1.5" stroke-dasharray="6 5"/>';
   }
   if (isFrontStackShared) {
     // Diagonal comm lines: top of column N -> bottom of column N-1
@@ -1332,8 +1351,10 @@ function buildSvg(state, results) {
       );
       if (touchedInverter !== -1 && topIndices.length > 0) {
         const from = inverterPositions[touchedInverter];
-        const to = batteryPositions[topIndices[0]];
-        svg += '<line x1="' + (from.x + 70) + '" y1="' + (from.y + 62) + '" x2="' + (to.x + 90) + '" y2="' + (to.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+        const primaryBatteryIndex = topIndices[0];
+        const to = batteryPositions[primaryBatteryIndex];
+        // topIndices[0] is the primary of the do-not-share group → green dashed.
+        svg += '<line x1="' + (from.x + 70) + '" y1="' + (from.y + 62) + '" x2="' + (to.x + 90) + '" y2="' + (to.y - 6) + '" stroke="' + commColorFor(primaryBatteryIndex) + '" stroke-width="1.5" stroke-dasharray="6 5"/>';
       }
       topIndices.forEach((topIndex) => {
         const bottomIndex = topIndex + 1;
@@ -1521,7 +1542,8 @@ function buildSvg(state, results) {
 
   const legend = '<div class="legend">' +
     '<div class="legendItem"><div class="swatchBlack"></div><span>Power cable</span></div>' +
-    '<div class="legendItem"><div class="swatchBlue"></div><span>Battery &amp; inverter communication</span></div>' +
+    '<div class="legendItem"><div class="swatchBlue"></div><span>Battery to battery communication</span></div>' +
+    '<div class="legendItem"><div class="swatchGreen"></div><span>Primary battery to inverter communication</span></div>' +
     '<div class="legendItem"><div class="swatchMustard"></div><span>Inverter-to-inverter communication</span></div>' +
     '</div>';
   return svg + legend;
