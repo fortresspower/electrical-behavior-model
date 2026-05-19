@@ -4,11 +4,14 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Battery & inverter wiring validator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
-body { background: #f8fafc; color: #0f172a; font-family: Arial, sans-serif; }
+body { background: #f8fafc; color: #0f172a; font-family: "Rajdhani", Arial, sans-serif; }
 .page { min-height: 100vh; padding: 24px; }
 .container { max-width: 1500px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
 .headerRow { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
@@ -80,6 +83,36 @@ body { background: #f8fafc; color: #0f172a; font-family: Arial, sans-serif; }
 .swatchBlue { width: 28px; height: 0; border-top: 3px dashed #2563eb; }
 .swatchMustard { width: 28px; height: 0; border-top: 3px dashed #d4a017; }
 .swatchGreen { width: 28px; height: 0; border-top: 3px dashed #16a34a; }
+
+/* Wizard step cards */
+.wizardStep { border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; background: #ffffff; transition: opacity 0.18s ease, border-color 0.18s ease, background 0.18s ease; }
+.wizardStep.active { border-color: #0f172a; border-width: 2px; padding: 13px 15px; box-shadow: 0 2px 10px rgba(15,23,42,0.06); }
+.wizardStep.completed { background: #fafafa; border-color: #dcfce7; }
+.wizardStep.pending { opacity: 0.45; background: #fafafa; border-style: dashed; }
+.wizardStepHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.wizardStepTitle { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; color: #0f172a; }
+.wizardStepNum { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #e2e8f0; color: #475569; font-size: 11px; font-weight: 800; }
+.wizardStep.active .wizardStepNum { background: #0f172a; color: #ffffff; }
+.wizardStep.completed .wizardStepNum { background: #16a34a; color: #ffffff; }
+.wizardEditBtn { font-size: 12px; color: #2563eb; background: none; border: none; padding: 4px 6px; cursor: pointer; font-weight: 600; }
+.wizardEditBtn:hover { text-decoration: underline; }
+.wizardStepSummary { font-size: 13px; color: #475569; margin-top: 6px; margin-left: 32px; }
+.wizardStepBody { margin-top: 12px; }
+.wizardContinueRow { display: flex; justify-content: flex-end; margin-top: 14px; }
+.wizardContinue { background: #0f172a; color: #ffffff; border: none; padding: 8px 18px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }
+.wizardContinue:hover { background: #1e293b; }
+.wizardContinue:disabled { background: #cbd5e1; cursor: not-allowed; }
+.wizardPendingMsg { font-size: 12px; color: #94a3b8; font-style: italic; margin-left: 32px; }
+
+/* Smart suggestion banner */
+.smartSuggestion { background: #fef3c7; border: 1.5px solid #f59e0b; border-radius: 8px; padding: 10px 14px; margin: 8px 0; display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+.smartSuggestion .msg { color: #78350f; font-size: 13px; font-weight: 500; flex: 1; min-width: 200px; }
+.smartSuggestion .applyBtn { background: #f59e0b; color: #ffffff; border: none; padding: 6px 14px; font-size: 12px; font-weight: 700; border-radius: 5px; cursor: pointer; }
+.smartSuggestion .applyBtn:hover { background: #d97706; }
+
+/* Advanced section toggle */
+.advancedToggle { background: none; border: none; color: #2563eb; font-size: 12px; font-weight: 600; cursor: pointer; padding: 8px 0; }
+.advancedToggle:hover { text-decoration: underline; }
 .figureHeaderRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 0 16px; }
 .overlayBackdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); z-index: 1000; padding: 20px; box-sizing: border-box; overflow: auto; }
 .overlayPanel { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 10px 30px rgba(15,23,42,0.18); min-height: calc(100vh - 40px); }
@@ -608,6 +641,8 @@ const state = {
   eforceModuleCount: 6,
   configurationMode: "none",
   busbarType: "none",     // eFlex Max only: "busbar" | "eflex_busbar" | "none"
+  wizardActiveStep: "inverter",     // current step key in the guided wizard
+  wizardCompletedSteps: [],          // array of step keys that have been confirmed
 };
 
 // Track open/closed state of <details> sections so re-renders don't collapse them.
@@ -997,6 +1032,148 @@ function autoConfigureDoNotShareBattery() {
   applyDoNotShareConfiguration(state.batteryLayoutMode);
   scheduleRender();
 }
+// === Wizard helpers ===
+function getWizardSteps() {
+  const steps = [
+    { key: "inverter", title: "Inverter" },
+    { key: "battery", title: "Battery" },
+  ];
+  if (state.batteryModel === "eforce") {
+    steps.push({ key: "stacks", title: "Stack arrangement" });
+  } else if (state.batteryModel === "eboost") {
+    steps.push({ key: "layout", title: "Layout" });
+  }
+  steps.push({ key: "sharing", title: "Sharing scheme" });
+  if (state.batteryModel === "eflex_max") {
+    steps.push({ key: "busrail", title: "Bus rail" });
+  }
+  return steps;
+}
+
+function isWizardStepCompleted(key) {
+  return (state.wizardCompletedSteps || []).indexOf(key) !== -1;
+}
+
+function getWizardStatus(key) {
+  // Visible steps may have changed (battery model switch); drop stale completed.
+  const visibleKeys = getWizardSteps().map((s) => s.key);
+  state.wizardCompletedSteps = (state.wizardCompletedSteps || []).filter((k) => visibleKeys.indexOf(k) !== -1);
+  // Re-home wizardActiveStep ONLY if it's a non-null value that's no longer
+  // visible (e.g., user switched battery model away from a step). When
+  // wizardActiveStep is explicitly null (set by continueWizardStep after the
+  // final step), leave it null so every step renders as "completed". The old
+  // version had a `|| visibleKeys[last]` fallback that resurrected the last
+  // step when activeStep was null — clicking Continue on the final step
+  // looked like a no-op because the card immediately re-activated itself.
+  if (state.wizardActiveStep !== null && visibleKeys.indexOf(state.wizardActiveStep) === -1) {
+    state.wizardActiveStep = visibleKeys.find((k) => !isWizardStepCompleted(k)) || null;
+  }
+  // Active wins over completed — that's how Edit re-opens a step. Otherwise
+  // a step that's both in completedSteps AND in wizardActiveStep would render
+  // as completed (collapsed summary) instead of active (controls visible).
+  if (state.wizardActiveStep === key) return "active";
+  if (isWizardStepCompleted(key)) return "completed";
+  return "pending";
+}
+
+function continueWizardStep(stepKey) {
+  if (!isWizardStepCompleted(stepKey)) {
+    state.wizardCompletedSteps = state.wizardCompletedSteps.concat([stepKey]);
+  }
+  // Advance to next non-completed step.
+  const steps = getWizardSteps();
+  for (let i = 0; i < steps.length; i += 1) {
+    if (!isWizardStepCompleted(steps[i].key)) {
+      state.wizardActiveStep = steps[i].key;
+      scheduleRender();
+      return;
+    }
+  }
+  state.wizardActiveStep = null;
+  scheduleRender();
+}
+
+function editWizardStep(stepKey) {
+  state.wizardActiveStep = stepKey;
+  scheduleRender();
+}
+
+function markAllWizardStepsComplete() {
+  // Used by the demo buttons — push the user past the wizard since the demo is fully configured.
+  state.wizardCompletedSteps = getWizardSteps().map((s) => s.key);
+  state.wizardActiveStep = null;
+}
+
+function resetWizard() {
+  state.wizardCompletedSteps = [];
+  state.wizardActiveStep = "inverter";
+}
+
+// === Smart battery-count suggestion ===
+function computeBatterySuggestion() {
+  // Capacity-based suggestion: triggers whenever total inverter current
+  // exceeds the sum of every battery's max-discharge rating, and recommends
+  // how many more batteries (or eForce modules) bring the system back into
+  // compliance. Works for eBoost, eForce, and eFlex Max.
+  const invModel = INVERTER_MODELS[state.inverterModel];
+  if (!invModel) return null;
+  const invPerInverter = (invModel.current || 0) * (invModel.ports || 1);
+  const totalInvCurrent = state.inverterCount * invPerInverter;
+
+  // Sum the actual per-battery capacity, accounting for eForce stack sizes.
+  let totalBatCapacity = 0;
+  for (let i = 0; i < state.batteryCount; i += 1) {
+    totalBatCapacity += getBatteryMaxCurrent(i, state.batteryModel, state.eforceStackSizes) || 0;
+  }
+
+  if (totalInvCurrent <= totalBatCapacity) return null;
+  const shortfallA = totalInvCurrent - totalBatCapacity;
+
+  // Per-added-unit capacity. For eForce a fresh module added as a 1-module
+  // stack contributes 195 A (worst case); for eBoost 250 A; for eFlex Max 100 A.
+  let perUnitA, unitLabelSingle, unitLabelPlural, currentCount, maxCount;
+  if (state.batteryModel === "eforce") {
+    perUnitA = getEforceStackCurrent ? getEforceStackCurrent(1) : 195;
+    unitLabelSingle = "module";
+    unitLabelPlural = "modules";
+    currentCount = state.eforceModuleCount || state.batteryCount;
+    maxCount = EFORCE_MAX_BATTERY_COUNT;
+  } else if (state.batteryModel === "eflex_max") {
+    perUnitA = EFLEX_MAX_CURRENT || 100;
+    unitLabelSingle = "battery";
+    unitLabelPlural = "batteries";
+    currentCount = state.batteryCount;
+    maxCount = getMaxBatteryCountForModel("eflex_max");
+  } else {
+    perUnitA = 250; // eBoost per-battery max
+    unitLabelSingle = "battery";
+    unitLabelPlural = "batteries";
+    currentCount = state.batteryCount;
+    maxCount = getMaxBatteryCountForModel("eboost");
+  }
+
+  const additional = Math.ceil(shortfallA / perUnitA);
+  const newTotal = currentCount + additional;
+  if (newTotal > maxCount) return null; // can't fix within the model's limits
+
+  return {
+    additional: additional,
+    newTotal: newTotal,
+    unitSingle: unitLabelSingle,
+    unitPlural: unitLabelPlural,
+    totalInvCurrent: totalInvCurrent,
+    totalBatCapacity: totalBatCapacity,
+  };
+}
+
+function applyBatterySuggestion(newTotal) {
+  if (state.batteryModel === "eforce") {
+    setEforceModuleCount(newTotal);
+  } else {
+    resizeSystem(state.inverterCount, newTotal);
+  }
+}
+
 function setBusbarType(busbar) {
   // eFlex Max only: choose between Busbar, eFlex Busbar, or no bus rail.
   // Toggling the currently-active type turns it off (back to "none").
@@ -1592,128 +1769,169 @@ function buildSetupPanel(state, results) {
   html += '<div class="panelHeader">System setup</div>';
   html += '<div class="setupBody">';
 
-  // Choose Battery
-  html += '<details class="section"' + (detailsOpen.chooseBattery ? ' open' : '') + ' data-details-key="chooseBattery">';
-  html += '<summary>Choose Battery</summary>';
-  html += '<div class="configButtonRow">';
-  html += '<button class="btn' + (state.batteryModel === 'eboost' ? ' active' : '') + '" data-action="setBatteryEboost">eBoost</button>';
-  html += '<button class="btn' + (state.batteryModel === 'eforce' ? ' active' : '') + '" data-action="setBatteryEforce">eForce</button>';
-  html += '<button class="btn' + (state.batteryModel === 'eflex_max' ? ' active' : '') + '" data-action="setBatteryEflexMax">eFlex Max</button>';
-  html += '</div>';
-  html += '</details>';
-
-  // Step 1
-  html += '<details class="section"' + (detailsOpen.step1 ? ' open' : '') + ' data-details-key="step1">';
-  html += '<summary>Step 1. Choose inverter model</summary>';
-  html += '<select class="select" data-action="setInverterModel">';
-  ['envy_8kw', 'envy_10kw', 'envy_duo_21_envy_12kw'].forEach((key) => {
-    const m = INVERTER_MODELS[key];
-    const sel = state.inverterModel === key ? ' selected' : '';
-    html += '<option value="' + key + '"' + sel + '>' + escapeHtml(m.label) + ' — ' + m.current + ' A</option>';
-  });
-  html += '</select>';
-  html += '<div class="helper">' + escapeHtml(bridgedNote) + '</div>';
-  html += '</details>';
-
-  // Step 2
-  const eforceMode = state.batteryModel === 'eforce';
-  const eflexMaxMode = state.batteryModel === 'eflex_max';
-  const noFrontStack = eforceMode || eflexMaxMode;
-  const eforceModules = eforceMode ? (state.eforceModuleCount || 1) : 0;
-  html += '<details class="section"' + (detailsOpen.step2 ? ' open' : '') + ' data-details-key="step2">';
-  html += '<summary>Step 2. Choose the number of devices.</summary>';
-  html += '<div class="twoCol">';
-  html += '<div>';
-  html += '<label class="subFieldLabel">Number of inverters</label>';
-  html += '<div class="row">';
-  html += '<button class="smallButton" data-action="invMinus">−</button>';
-  html += '<input class="input" data-action="invInput" value="' + inv + '"/>';
-  html += '<button class="smallButton" data-action="invPlus">+</button>';
-  html += '</div></div>';
-  if (eforceMode) {
-    html += '<div>';
-    html += '<label class="subFieldLabel">Number of eForce batteries (modules, 1–32)</label>';
-    html += '<div class="row">';
-    html += '<button class="smallButton" data-action="eforceModMinus">−</button>';
-    html += '<input class="input" data-action="eforceModInput" value="' + eforceModules + '"/>';
-    html += '<button class="smallButton" data-action="eforceModPlus">+</button>';
-    html += '</div>';
-    html += '<div class="helper">Each module is 9.6 kWh. Auto-arrange packs them into stacks of 1–3.</div>';
-    html += '</div>';
-  } else {
-    html += '<div>';
-    html += '<label class="subFieldLabel">Number of batteries</label>';
-    html += '<div class="row">';
-    html += '<button class="smallButton" data-action="batMinus">−</button>';
-    html += '<input class="input" data-action="batInput" value="' + bat + '"/>';
-    html += '<button class="smallButton" data-action="batPlus">+</button>';
-    html += '</div></div>';
-  }
-  html += '</div>';
-  if (eforceMode) {
-    html += '<div style="margin-top:14px">';
-    html += '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">';
-    html += '<label class="subFieldLabel" style="margin:0">Stack arrangement</label>';
-    html += '<div style="display:flex;gap:6px;align-items:center">';
-    const canSplit = bat < EFORCE_MAX_BATTERY_COUNT && (state.eforceStackSizes || []).some((s) => s > 1);
-    const splitDisabled = canSplit ? '' : ' disabled';
-    const splitOpacity = canSplit ? '' : ';opacity:0.4;cursor:not-allowed';
-    html += '<button class="btn" style="padding:4px 10px' + splitOpacity + '" data-action="splitEforceStack" title="Split the largest stack into two by peeling off one module"' + splitDisabled + '>+ Split largest</button>';
-    html += '<button class="btn" data-action="autoArrangeStacks">Auto-arrange stacks</button>';
-    html += '</div>';
-    html += '</div>';
-    html += '<div class="helper" style="margin-bottom:8px">' + bat + ' stack' + (bat === 1 ? '' : 's') + ' • ' + eforceModules + ' module' + (eforceModules === 1 ? '' : 's') + ' • ' + (eforceModules * EFORCE_MODULE_KWH).toFixed(1) + ' kWh total. Click 1/2/3 below to override an individual stack.</div>';
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">';
-    for (let i = 0; i < bat; i += 1) {
-      const size = (state.eforceStackSizes || [])[i] || 1;
-      const maxA = getEforceStackCurrent(size);
-      html += '<div style="display:flex;align-items:center;gap:6px;font-size:12px">';
-      html += '<span style="min-width:46px;font-weight:600">B' + (i + 1) + '</span>';
-      [1, 2, 3].forEach((n) => {
-        const active = size === n ? ' active' : '';
-        html += '<button class="btn' + active + '" style="padding:2px 8px;font-size:11px;min-width:0" data-action="eforceStack" data-idx="' + i + '" data-n="' + n + '">' + n + '</button>';
-      });
-      html += '<span class="helper" style="margin-left:4px">' + maxA + 'A</span>';
-      html += '</div>';
+  // Wizard cards — guided step-by-step configuration.
+  const wizardSteps = getWizardSteps();
+  wizardSteps.forEach((step, idx) => {
+    const status = getWizardStatus(step.key);
+    html += '<div class="wizardStep ' + status + '" data-step="' + step.key + '">';
+    html += '<div class="wizardStepHeader">';
+    html += '<div class="wizardStepTitle"><span class="wizardStepNum">' + (status === 'completed' ? '\u2713' : (idx + 1)) + '</span>' + escapeHtml(step.title) + '</div>';
+    if (status === 'completed') {
+      html += '<button class="wizardEditBtn" data-action="editStep" data-step="' + step.key + '">Edit</button>';
     }
     html += '</div>';
-    html += '</div>';
-  }
-  html += '</details>';
 
-  // Auto config
-  html += '<details class="section"' + (detailsOpen.autoConfig ? ' open' : '') + ' data-details-key="autoConfig">';
-  html += '<summary>Auto configuration</summary>';
-  html += '<div style="font-size:12px;font-weight:700;margin-bottom:8px">Step 3. Choose the Configuration</div>';
-  html += '<div class="configButtonRow">';
-  html += '<button class="btn' + (state.configurationMode === 'share' ? ' active' : '') + '" data-action="autoShare">Share battery</button>';
-  html += '<button class="btn' + (state.configurationMode === 'do_not_share' ? ' active' : '') + '" data-action="autoDoNotShare">Do not share battery</button>';
-  html += '</div>';
-  // For eFlex Max only: independent second row for the bus rail (Busbar / eFlex Busbar).
-  if (state.batteryModel === 'eflex_max') {
-    html += '<div class="configButtonRow" style="margin-top:8px">';
-    html += '<button class="btn' + (state.busbarType === 'busbar' ? ' active' : '') + '" data-action="autoBusbar">Busbar</button>';
-    html += '<button class="btn' + (state.busbarType === 'eflex_busbar' ? ' active' : '') + '" data-action="autoEflexBusbar">eFlex Busbar (325A)</button>';
-    html += '</div>';
-  }
-  html += '<div class="configButtonRow" style="margin-top:8px">';
-  html += '<button class="btn' + (state.batteryLayoutMode === 'side_by_side' ? ' active' : '') + '" data-action="layoutSide">Side to side</button>';
-  if (!noFrontStack) {
-    html += '<button class="btn' + (state.batteryLayoutMode === 'front_stacking' ? ' active' : '') + '" data-action="layoutFront">Front stacking</button>';
-  }
-  html += '</div>';
-  html += '<div class="helper">Share battery will auto-configure a shared battery layout using eWay connection points, enable all adjacent battery conductors, and center the inverter landings on a contiguous battery window whenever possible so the unused batteries are balanced at both extremes, without automatically expanding to eWay Pro.</div>';
-  html += '<div class="helper">Do not share battery will auto-configure proportional contiguous battery groups per inverter, make sure no battery is left unused, and use battery-to-battery conductors within each isolated group while keeping different inverter groups electrically separate.</div>';
-  if (!noFrontStack) {
-    html += '<div class="helper">Layout view changes only the drawing. Share and Do Not Share battery rules stay the same.</div>';
-    html += '<div class="helper">In front stacking, the lower battery in each stack is treated as eWay Lite and is fed from the eWay battery above it.</div>';
-  } else if (eforceMode) {
-    html += '<div class="helper">eForce uses a fixed 4-terminal eWay connection point (750 A node rating). Auto-config does not change connection-point type. Front stacking is not available for eForce.</div>';
-  } else if (eflexMaxMode) {
-    html += '<div class="helper">eFlex Max has a 2-terminal connection point with no eWay (100 A per battery). Front stacking is not available; use the Busbar or eFlex Busbar configuration to share inverters across multiple batteries.</div>';
-  }
-  html += '</details>';
+    if (status === 'pending') {
+      html += '<div class="wizardPendingMsg">Complete the previous step to continue.</div>';
+      html += '</div>';
+      return;
+    }
 
+    // Step-specific body — completed shows summary; active shows controls + Continue button.
+    if (step.key === 'inverter') {
+      const invModel = INVERTER_MODELS[state.inverterModel];
+      if (status === 'completed') {
+        html += '<div class="wizardStepSummary">' + escapeHtml(invModel.label) + ' \u00d7 ' + state.inverterCount + ' \u2014 ' + invModel.current + ' A per port' + (invModel.ports > 1 ? ' (' + invModel.ports + ' ports each)' : '') + '</div>';
+      } else {
+        html += '<div class="wizardStepBody">';
+        html += '<label class="subFieldLabel">Inverter model</label>';
+        html += '<select class="select" data-action="setInverterModel">';
+        ['envy_8kw', 'envy_10kw', 'envy_duo_21_envy_12kw'].forEach((key) => {
+          const m = INVERTER_MODELS[key];
+          const sel = state.inverterModel === key ? ' selected' : '';
+          html += '<option value="' + key + '"' + sel + '>' + escapeHtml(m.label) + ' \u2014 ' + m.current + ' A' + (m.ports > 1 ? ' \u00d7 ' + m.ports + ' ports' : '') + '</option>';
+        });
+        html += '</select>';
+        html += '<div class="helper">' + escapeHtml(bridgedNote) + '</div>';
+        html += '<label class="subFieldLabel" style="margin-top:10px">Number of inverters</label>';
+        html += '<div class="row">';
+        html += '<button class="smallButton" data-action="invMinus">\u2212</button>';
+        html += '<input class="input" data-action="invInput" value="' + inv + '"/>';
+        html += '<button class="smallButton" data-action="invPlus">+</button>';
+        html += '</div>';
+        html += '<div class="wizardContinueRow"><button class="wizardContinue" data-action="continueWizard" data-step="inverter">Continue \u2192</button></div>';
+        html += '</div>';
+      }
+    } else if (step.key === 'battery') {
+      if (status === 'completed') {
+        const modelLabel = state.batteryModel === 'eboost' ? 'eBoost' : (state.batteryModel === 'eforce' ? 'eForce' : 'eFlex Max');
+        const countLabel = state.batteryModel === 'eforce'
+          ? ((state.eforceModuleCount || 1) + ' module' + ((state.eforceModuleCount || 1) === 1 ? '' : 's') + ' across ' + state.batteryCount + ' stack' + (state.batteryCount === 1 ? '' : 's'))
+          : (state.batteryCount + ' \u00d7 ' + modelLabel);
+        html += '<div class="wizardStepSummary">' + escapeHtml(countLabel) + (state.batteryModel === 'eforce' ? '' : '') + '</div>';
+      } else {
+        html += '<div class="wizardStepBody">';
+        html += '<label class="subFieldLabel">Battery model</label>';
+        html += '<div class="configButtonRow">';
+        html += '<button class="btn' + (state.batteryModel === 'eboost' ? ' active' : '') + '" data-action="setBatteryEboost">eBoost</button>';
+        html += '<button class="btn' + (state.batteryModel === 'eforce' ? ' active' : '') + '" data-action="setBatteryEforce">eForce</button>';
+        html += '<button class="btn' + (state.batteryModel === 'eflex_max' ? ' active' : '') + '" data-action="setBatteryEflexMax">eFlex Max</button>';
+        html += '</div>';
+        if (state.batteryModel === 'eforce') {
+          const eforceModules = state.eforceModuleCount || 1;
+          html += '<label class="subFieldLabel" style="margin-top:10px">Number of eForce modules (1\u201332)</label>';
+          html += '<div class="row">';
+          html += '<button class="smallButton" data-action="eforceModMinus">\u2212</button>';
+          html += '<input class="input" data-action="eforceModInput" value="' + eforceModules + '"/>';
+          html += '<button class="smallButton" data-action="eforceModPlus">+</button>';
+          html += '</div>';
+          html += '<div class="helper">Each module is 9.6 kWh. Stacks are arranged in the next step.</div>';
+        } else {
+          html += '<label class="subFieldLabel" style="margin-top:10px">Number of batteries</label>';
+          html += '<div class="row">';
+          html += '<button class="smallButton" data-action="batMinus">\u2212</button>';
+          html += '<input class="input" data-action="batInput" value="' + bat + '"/>';
+          html += '<button class="smallButton" data-action="batPlus">+</button>';
+          html += '</div>';
+        }
+        html += '<div class="wizardContinueRow"><button class="wizardContinue" data-action="continueWizard" data-step="battery">Continue \u2192</button></div>';
+        html += '</div>';
+      }
+    } else if (step.key === 'layout') {
+      // eBoost only
+      if (status === 'completed') {
+        html += '<div class="wizardStepSummary">' + (state.batteryLayoutMode === 'side_by_side' ? 'Side by side' : 'Front stacking') + '</div>';
+      } else {
+        html += '<div class="wizardStepBody">';
+        html += '<div class="configButtonRow">';
+        html += '<button class="btn' + (state.batteryLayoutMode === 'side_by_side' ? ' active' : '') + '" data-action="layoutSide">Side by side</button>';
+        html += '<button class="btn' + (state.batteryLayoutMode === 'front_stacking' ? ' active' : '') + '" data-action="layoutFront">Front stacking</button>';
+        html += '</div>';
+        html += '<div class="helper">Layout changes only the drawing. In front stacking, the lower battery in each stack is treated as eWay Lite and is fed from the eWay battery above it.</div>';
+        html += '<div class="wizardContinueRow"><button class="wizardContinue" data-action="continueWizard" data-step="layout">Continue \u2192</button></div>';
+        html += '</div>';
+      }
+    } else if (step.key === 'stacks') {
+      // eForce only
+      const eforceModules = state.eforceModuleCount || 1;
+      if (status === 'completed') {
+        const sizes = (state.eforceStackSizes || []).slice(0, bat);
+        const summary = sizes.map((s) => s + '-module').join(' + ');
+        html += '<div class="wizardStepSummary">' + escapeHtml(summary) + ' \u00b7 ' + eforceModules + ' modules \u00b7 ' + (eforceModules * EFORCE_MODULE_KWH).toFixed(1) + ' kWh</div>';
+      } else {
+        html += '<div class="wizardStepBody">';
+        html += '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">';
+        html += '<div style="font-size:12px;color:#475569">' + bat + ' stack' + (bat === 1 ? '' : 's') + ' \u00b7 ' + eforceModules + ' module' + (eforceModules === 1 ? '' : 's') + ' \u00b7 ' + (eforceModules * EFORCE_MODULE_KWH).toFixed(1) + ' kWh total</div>';
+        html += '<div style="display:flex;gap:6px">';
+        const canSplit = bat < EFORCE_MAX_BATTERY_COUNT && (state.eforceStackSizes || []).some((s) => s > 1);
+        html += '<button class="btn" style="padding:4px 10px' + (canSplit ? '' : ';opacity:0.4;cursor:not-allowed') + '" data-action="splitEforceStack"' + (canSplit ? '' : ' disabled') + '>+ Split largest</button>';
+        html += '<button class="btn" data-action="autoArrangeStacks">Auto-arrange</button>';
+        html += '</div></div>';
+        html += '<div class="helper" style="margin-bottom:8px">Click 1/2/3 to override an individual stack.</div>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">';
+        for (let i = 0; i < bat; i += 1) {
+          const size = (state.eforceStackSizes || [])[i] || 1;
+          const maxA = getEforceStackCurrent(size);
+          html += '<div style="display:flex;align-items:center;gap:6px;font-size:12px">';
+          html += '<span style="min-width:46px;font-weight:600">B' + (i + 1) + '</span>';
+          [1, 2, 3].forEach((n) => {
+            const active = size === n ? ' active' : '';
+            html += '<button class="btn' + active + '" style="padding:2px 8px;font-size:11px;min-width:0" data-action="eforceStack" data-idx="' + i + '" data-n="' + n + '">' + n + '</button>';
+          });
+          html += '<span class="helper" style="margin-left:4px">' + maxA + 'A</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+        html += '<div class="wizardContinueRow"><button class="wizardContinue" data-action="continueWizard" data-step="stacks">Continue \u2192</button></div>';
+        html += '</div>';
+      }
+    } else if (step.key === 'sharing') {
+      if (status === 'completed') {
+        const sharingLabel = state.configurationMode === 'share' ? 'Share battery' : (state.configurationMode === 'do_not_share' ? 'Do not share battery' : 'No auto-config');
+        html += '<div class="wizardStepSummary">' + sharingLabel + '</div>';
+      } else {
+        html += '<div class="wizardStepBody">';
+        html += '<div class="configButtonRow">';
+        html += '<button class="btn' + (state.configurationMode === 'share' ? ' active' : '') + '" data-action="autoShare">Share battery</button>';
+        html += '<button class="btn' + (state.configurationMode === 'do_not_share' ? ' active' : '') + '" data-action="autoDoNotShare">Do not share battery</button>';
+        html += '</div>';
+        html += '<div class="helper">Share battery auto-configures a shared layout using eWay connection points and enables all adjacent battery conductors.</div>';
+        html += '<div class="helper">Do not share battery splits batteries into isolated groups per inverter, with battery-to-battery conductors inside each group.</div>';
+        const sharingPicked = state.configurationMode === 'share' || state.configurationMode === 'do_not_share';
+        html += '<div class="wizardContinueRow"><button class="wizardContinue" data-action="continueWizard" data-step="sharing"' + (sharingPicked ? '' : ' disabled') + '>Continue \u2192</button></div>';
+        html += '</div>';
+      }
+    } else if (step.key === 'busrail') {
+      // eFlex Max only
+      if (status === 'completed') {
+        const busLabel = state.busbarType === 'busbar' ? 'Busbar (1.2 \u00d7 inverter total)' : (state.busbarType === 'eflex_busbar' ? 'eFlex Busbar (325 A)' : 'No bus rail');
+        html += '<div class="wizardStepSummary">' + busLabel + '</div>';
+      } else {
+        html += '<div class="wizardStepBody">';
+        html += '<div class="configButtonRow">';
+        html += '<button class="btn' + (state.busbarType === 'none' ? ' active' : '') + '" data-action="busbarNone">No bus rail</button>';
+        html += '<button class="btn' + (state.busbarType === 'busbar' ? ' active' : '') + '" data-action="autoBusbar">Busbar</button>';
+        html += '<button class="btn' + (state.busbarType === 'eflex_busbar' ? ' active' : '') + '" data-action="autoEflexBusbar">eFlex Busbar (325 A)</button>';
+        html += '</div>';
+        html += '<div class="helper">eFlex Max has a 2-terminal connection point with no eWay (100 A per battery). Use a bus rail to share inverters across multiple batteries.</div>';
+        html += '<div class="wizardContinueRow"><button class="wizardContinue" data-action="continueWizard" data-step="busrail">Continue \u2192</button></div>';
+        html += '</div>';
+      }
+    }
+    html += '</div>';
+  });
+
+  // Advanced configuration — collapsible at the bottom of the wizard.
   // Manual config
   html += '<details class="section"' + (detailsOpen.manualConfig ? ' open' : '') + ' data-details-key="manualConfig">';
   html += '<summary>Manual Configuration</summary>';
@@ -1789,7 +2007,8 @@ function buildSetupPanel(state, results) {
   }
   html += '</details>';
 
-  html += '</details>'; // Manual
+  html += '</details>'; // Inner manual wrapper
+  html += '</details>'; // Outer Advanced configuration
 
   html += '</div>'; // setupBody
   html += '</div>'; // panel
@@ -1825,12 +2044,24 @@ function buildResultsPanel(state, results) {
       results.alarms.forEach((a) => { html += '<div>• ' + escapeHtml(a) + '</div>'; });
       html += '</div></div>';
     }
-    if (results.risks.length > 0) {
+    const suggestion = computeBatterySuggestion();
+    if (results.risks.length > 0 || suggestion) {
       html += '<div class="alertRed">';
       html += '<div class="alertTitleRed">🔴 Electrical risks</div>';
-      html += '<div class="alertList red">';
-      results.risks.forEach((r) => { html += '<div>• ' + escapeHtml(r) + '</div>'; });
-      html += '</div></div>';
+      if (results.risks.length > 0) {
+        html += '<div class="alertList red">';
+        results.risks.forEach((r) => { html += '<div>• ' + escapeHtml(r) + '</div>'; });
+        html += '</div>';
+      }
+      if (suggestion) {
+        const unit = suggestion.additional === 1 ? suggestion.unitSingle : suggestion.unitPlural;
+        const action = 'Add ' + suggestion.additional + ' ' + unit;
+        html += '<div class="smartSuggestion">';
+        html += '<div class="msg">✨ Total inverter current (' + formatAmps(suggestion.totalInvCurrent) + ' A) exceeds total battery capacity (' + formatAmps(suggestion.totalBatCapacity) + ' A). ' + action + ' (new total: ' + suggestion.newTotal + ' ' + suggestion.unitPlural + ') to make the system compliant.</div>';
+        html += '<button class="applyBtn" data-action="applyBatterySuggestion" data-total="' + suggestion.newTotal + '">' + action + '</button>';
+        html += '</div>';
+      }
+      html += '</div>';
     }
     if (results.observations.length > 0 || results.inverterLimitWarnings.length > 0 || results.advisories.length > 0) {
       html += '<div class="alertYellow">';
@@ -2051,10 +2282,10 @@ document.addEventListener('click', (e) => {
   if (!el) return;
   const action = el.getAttribute('data-action');
   switch (action) {
-    case 'demoBalanced': demoBalanced(); break;
-    case 'demoOverload': demoOverload(); break;
-    case 'demoShared': demoShared(); break;
-    case 'clearAll': clearAll(); break;
+    case 'demoBalanced': demoBalanced(); markAllWizardStepsComplete(); scheduleRender(); break;
+    case 'demoOverload': demoOverload(); markAllWizardStepsComplete(); scheduleRender(); break;
+    case 'demoShared': demoShared(); markAllWizardStepsComplete(); scheduleRender(); break;
+    case 'clearAll': clearAll(); resetWizard(); scheduleRender(); break;
     case 'invMinus': resizeSystem(state.inverterCount - 1, state.batteryCount); break;
     case 'invPlus': resizeSystem(state.inverterCount + 1, state.batteryCount); break;
     case 'batMinus': resizeSystem(state.inverterCount, state.batteryCount - 1); break;
@@ -2063,6 +2294,10 @@ document.addEventListener('click', (e) => {
     case 'autoDoNotShare': autoConfigureDoNotShareBattery(); break;
     case 'autoBusbar': setBusbarType('busbar'); break;
     case 'autoEflexBusbar': setBusbarType('eflex_busbar'); break;
+    case 'busbarNone': { state.busbarType = 'none'; scheduleRender(); break; }
+    case 'continueWizard': { const stepKey = el.getAttribute('data-step'); if (stepKey) continueWizardStep(stepKey); break; }
+    case 'editStep': { const stepKey = el.getAttribute('data-step'); if (stepKey) editWizardStep(stepKey); break; }
+    case 'applyBatterySuggestion': { const newTotal = parseInt(el.getAttribute('data-total'), 10); if (newTotal > 0) applyBatterySuggestion(newTotal); break; }
     case 'layoutSide': setBatteryLayoutMode('side_by_side'); break;
     case 'layoutFront': setBatteryLayoutMode('front_stacking'); break;
     case 'setBatteryEboost': setBatteryModel('eboost'); break;
