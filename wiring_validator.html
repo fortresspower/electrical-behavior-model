@@ -188,6 +188,7 @@ function getBatteryCapacityWeight(batteryIndex, batteryModel, eforceStackSizes) 
   return 1;
 }
 const INVERTER_MODELS = {
+  solo_6_5kw: { label: "Solo 6.5kW", current: 140, maxPorts: 1, bridgedPorts: false },
   envy_8kw: { label: "Envy 8kW", current: 167, maxPorts: 1, bridgedPorts: false },
   envy_10kw: { label: "Envy 10kW", current: 210, maxPorts: 1, bridgedPorts: false },
   envy_duo_21_envy_12kw: { label: "Envy Duo 21 / Envy 12kW", current: 250, maxPorts: 2, bridgedPorts: true },
@@ -389,14 +390,13 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
       if ((connections[i] || [])[j]) targets.push(j);
     }
     if (targets.length === 0) {
-      observations.push(name + " is not connected (no current flow).");
+      observations.push(name + " isn't wired to any battery, so no power flows from it.");
       return;
     }
     if (targets.length > maxPorts) {
       inverterLimitWarnings.push(
-        name + " has " + targets.length + " outgoing conductors selected. Only " + maxPorts +
-        " conductor" + (maxPorts === 1 ? "" : "s") + " per inverter are allowed for the selected model; the first " +
-        maxPorts + " " + (maxPorts === 1 ? "is" : "are") + " used in the model."
+        name + " has " + targets.length + " battery cables connected, but this inverter model only supports " + maxPorts +
+        " cable" + (maxPorts === 1 ? "" : "s") + ". Only the first " + maxPorts + " " + (maxPorts === 1 ? "is" : "are") + " used."
       );
     }
     const activeTargets = targets.slice(0, maxPorts);
@@ -409,27 +409,27 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
   const batteryLinkGroups = buildBatteryLinkGroups(batteryCount, batteryLinks);
   const effectiveGroups = buildEffectiveGroups(inverterCount, batteryCount, directFlows, batteryLinks, bridgedPorts);
   const batteryGroupLabels = effectiveGroups.map((indices, groupIndex) =>
-    "Group " + (groupIndex + 1) + ": " + indices.map((idx) => batteryNames[idx]).join(", ")
+    "Group " + (groupIndex + 1) + " shares power across: " + indices.map((idx) => batteryNames[idx]).join(", ")
   );
   const globalShareMode = inferGlobalShareMode(effectiveGroups.length);
   const hasMixedShareDoNotShareTopology = hasTrueMixedShareDoNotShareTopology(effectiveGroups, inverterCount, directFlows);
   const communicationGroups = buildCommunicationGroups(inverterCount, batteryCount, directFlows, batteryLinks, bridgedPorts);
   if (globalShareMode === "share") {
-    observations.push("All batteries are part of one effective shared battery network. Share Battery topology confirmed.");
+    observations.push("All your batteries are wired together into one shared pool, so they share the load evenly. (Share Battery setup)");
   } else {
-    observations.push("Battery network is not fully shared. This layout behaves as Do Not Share Battery.");
-    advisories.push("Share Battery functionality depends on one continuous shared path across all batteries.");
-    advisories.push("That shared path can be created by battery conductors and, on bridged-port inverter models, through the inverter battery bus.");
+    observations.push("Your batteries are split into separate groups instead of one shared pool. (Do Not Share setup)");
+    advisories.push("To share batteries, there needs to be one unbroken connection running across all of them.");
+    advisories.push("You can create that connection with battery-to-battery cables, or — on inverters that link their two battery ports inside the unit — through the inverter itself.");
   }
   if (hasMixedShareDoNotShareTopology) {
-    alarms.push("Mixed Share / Do Not Share battery topology detected. This system combines a shared battery group that spans multiple inverters with other isolated battery groups.");
-    advisories.push("Choose one battery topology approach for the whole system: either all batteries participate in one shared network, or all battery groups remain isolated.");
+    alarms.push("This setup mixes two approaches: some batteries are shared across multiple inverters while others are kept separate. That is usually a wiring mistake.");
+    advisories.push("Pick one approach for the whole system: either wire every battery into a single shared pool, or keep every group fully separate. Try not to mix the two.");
   }
   advisories.push(bridgedPorts
-    ? "For Envy Duo 21 / Envy 12kW, the two inverter battery ports are treated as internally bridged."
-    : "For Envy 8kW and Envy 10kW, battery ports are not internally bridged.");
+    ? "The Envy Duo 21 / Envy 12kW links its two battery ports together inside the unit, so the two ports act as one."
+    : "This inverter keeps its battery port separate — it is not linked to anything inside the unit.");
   if (batteryLinkGroups.length > 1 && effectiveGroups.length === 1 && bridgedPorts) {
-    observations.push("Separated battery-conductor groups are being electrically shared through bridged inverter battery ports.");
+    observations.push("Even though these batteries aren't cabled directly to each other, they still share power because the inverter links its two battery ports inside the unit.");
   }
   batteryGroupLabels.forEach((label) => observations.push(label));
   effectiveGroups.forEach((indices) => {
@@ -471,8 +471,8 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
       autoCommConnections[inverterIndex][batteries[0]] = true;
       observations.push(
         reason === "bridged_inverter_bus"
-          ? "Communication grouped through bridged inverter battery ports: " + batteryNames[batteries[0]] + " is primary and " + batteryNames[batteries[batteries.length - 1]] + " follows through the inverter bus."
-          : "Shared communication group detected: " + batteryNames[batteries[0]] + " is primary and " + batteryNames[batteries[batteries.length - 1]] + " follows in the same effective group."
+          ? batteryNames[batteries[0]] + " is the lead battery that talks to the inverter; " + batteryNames[batteries[batteries.length - 1]] + " connects through the inverter's internal link."
+          : batteryNames[batteries[0]] + " is the lead battery that talks to the inverter; the others in this group follow " + batteryNames[batteries[0]] + "."
       );
     }
   });
@@ -500,9 +500,9 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
       const nodeOverload = incomingNodeCurrent > config.nodeRating + 1e-9;
       const terminalOveruse = totalConnectionPointsUsed > config.terminalCount;
       const inactive = finalBatteryLoad[i] <= 1e-9;
-      if (batteryOverload) risks.push(name + " absorbs " + formatAmps(finalBatteryLoad[i]) + " A, which is above its " + formatAmps(batteryMax) + " A battery maximum.");
-      if (nodeOverload) risks.push(name + " connection point incoming current is " + formatAmps(incomingNodeCurrent) + " A, which is above its " + formatAmps(config.nodeRating) + " A connection-point rating.");
-      if (terminalOveruse) risks.push(name + " uses " + totalConnectionPointsUsed + " power-conductor landings, but its selected connection point allows only " + config.terminalCount + ". Communication cabling is treated separately and is not counted as a power landing.");
+      if (batteryOverload) risks.push(name + " is being asked to deliver " + formatAmps(finalBatteryLoad[i]) + " A, but it can only safely handle " + formatAmps(batteryMax) + " A. Add more batteries or use fewer inverters to bring this down.");
+      if (nodeOverload) risks.push(name + " has " + formatAmps(incomingNodeCurrent) + " A flowing into its connection point, more than the " + formatAmps(config.nodeRating) + " A it is rated for. The connection hardware can't carry this much current.");
+      if (terminalOveruse) risks.push(name + " has " + totalConnectionPointsUsed + " power cables landing on it, but its connection point only has room for " + config.terminalCount + ". Move some cables or pick a connection point with more terminals. (Communication cables don't count here.)");
       return { name, finalLoad: finalBatteryLoad[i], incomingNodeCurrent, maxNodeCurrent, config, totalConnectionPointsUsed, batteryMax, overloaded: batteryOverload || nodeOverload || terminalOveruse, inactive };
     }
     const isBottomFrontStackBattery = batteryLayoutMode === "front_stacking" && isFrontStackBottomBattery(i, batteryLayoutMode);
@@ -514,9 +514,9 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
       const nodeOverload = incomingNodeCurrent > config.nodeRating + 1e-9;
       const terminalOveruse = totalConnectionPointsUsed > config.terminalCount;
       const inactive = finalBatteryLoad[i] <= 1e-9;
-      if (batteryOverload) risks.push(name + " absorbs " + formatAmps(finalBatteryLoad[i]) + " A, which is above its " + formatAmps(batteryMax) + " A battery maximum.");
-      if (nodeOverload) risks.push(name + " connection point incoming current is " + formatAmps(incomingNodeCurrent) + " A, which is above its " + formatAmps(config.nodeRating) + " A connection-point rating.");
-      if (terminalOveruse) risks.push(name + " uses " + totalConnectionPointsUsed + " power-conductor landings, but its selected connection point allows only " + config.terminalCount + ". Communication cabling is treated separately and is not counted as a power landing.");
+      if (batteryOverload) risks.push(name + " is being asked to deliver " + formatAmps(finalBatteryLoad[i]) + " A, but it can only safely handle " + formatAmps(batteryMax) + " A. Add more batteries or use fewer inverters to bring this down.");
+      if (nodeOverload) risks.push(name + " has " + formatAmps(incomingNodeCurrent) + " A flowing into its connection point, more than the " + formatAmps(config.nodeRating) + " A it is rated for. The connection hardware can't carry this much current.");
+      if (terminalOveruse) risks.push(name + " has " + totalConnectionPointsUsed + " power cables landing on it, but its connection point only has room for " + config.terminalCount + ". Move some cables or pick a connection point with more terminals. (Communication cables don't count here.)");
       return { name, finalLoad: finalBatteryLoad[i], incomingNodeCurrent, maxNodeCurrent, config, totalConnectionPointsUsed, batteryMax, overloaded: batteryOverload || nodeOverload || terminalOveruse, inactive };
     }
     const directConnectionCount = connections.reduce((sum, row) => sum + ((row || [])[i] ? 1 : 0), 0);
@@ -534,9 +534,9 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
     const nodeOverload = incomingNodeCurrent > config.nodeRating + 1e-9;
     const terminalOveruse = totalConnectionPointsUsed > config.terminalCount;
     const inactive = nodeInflow[i] <= 1e-9 && finalBatteryLoad[i] <= 1e-9;
-    if (batteryOverload) risks.push(name + " absorbs " + formatAmps(finalBatteryLoad[i]) + " A, which is above its " + formatAmps(batteryMax) + " A battery maximum.");
-    if (nodeOverload) risks.push(name + " connection point incoming current is " + formatAmps(incomingNodeCurrent) + " A, which is above its " + formatAmps(config.nodeRating) + " A connection-point rating.");
-    if (terminalOveruse) risks.push(name + " uses " + totalConnectionPointsUsed + " power-conductor landings, but its selected connection point allows only " + config.terminalCount + ". Communication cabling is treated separately and is not counted as a power landing.");
+    if (batteryOverload) risks.push(name + " is being asked to deliver " + formatAmps(finalBatteryLoad[i]) + " A, but it can only safely handle " + formatAmps(batteryMax) + " A. Add more batteries or use fewer inverters to bring this down.");
+    if (nodeOverload) risks.push(name + " has " + formatAmps(incomingNodeCurrent) + " A flowing into its connection point, more than the " + formatAmps(config.nodeRating) + " A it is rated for. The connection hardware can't carry this much current.");
+    if (terminalOveruse) risks.push(name + " has " + totalConnectionPointsUsed + " power cables landing on it, but its connection point only has room for " + config.terminalCount + ". Move some cables or pick a connection point with more terminals. (Communication cables don't count here.)");
     return { name, finalLoad: finalBatteryLoad[i], incomingNodeCurrent, maxNodeCurrent, config, totalConnectionPointsUsed, batteryMax, overloaded: batteryOverload || nodeOverload || terminalOveruse, inactive };
   });
   if (isBusbarConfig) {
@@ -752,13 +752,26 @@ function splitLargestEforceStack() {
 }
 
 function setEforceStackSize(index, size) {
-  // Manual override of a single stack's height. Updates moduleCount to the new sum.
-  const clamped = Math.max(1, Math.min(3, size | 0));
-  const next = (state.eforceStackSizes || []).slice();
-  while (next.length < state.batteryCount) next.push(2);
-  if (index >= 0 && index < next.length) next[index] = clamped;
-  state.eforceStackSizes = next;
-  state.eforceModuleCount = next.reduce((sum, n) => sum + n, 0);
+  // Clicking a size on the stack picker re-packs the FIXED module budget into
+  // uniform stacks of that size, with a smaller remainder stack if the budget
+  // isn't an exact multiple. The module count chosen in the Battery step never
+  // changes — only the grouping does. Examples (budget = 4):
+  //   click "2" -> [2,2]   click "3" -> [3,1]   click "1" -> [1,1,1,1]
+  // This makes the picker behave predictably ("I want N-module stacks") instead
+  // of awkwardly shaving a module off a neighbour.
+  const target = Math.max(1, Math.min(3, size | 0));
+  const budget = state.eforceModuleCount || (state.eforceStackSizes || []).reduce((s, n) => s + n, 0) || 1;
+  const sizes = [];
+  let remaining = budget;
+  while (remaining > 0) {
+    const take = Math.min(target, remaining);
+    sizes.push(take);
+    remaining -= take;
+  }
+  const newBatteryCount = sizes.length;
+  resizeSystem(state.inverterCount, newBatteryCount); // rebuilds connections/types for the new stack count
+  state.eforceStackSizes = sizes;                     // restore our arrangement (resizeSystem defaults to 2s)
+  // eforceModuleCount stays fixed at `budget`.
   reapplyAutoConfigIfNeeded();
   scheduleRender();
 }
@@ -1197,6 +1210,11 @@ function setBatteryLayoutMode(mode) {
 }
 function setInverterModel(model) {
   state.inverterModel = model;
+  // Solo 6.5kW has a single terminal and cannot run a "Do not share" topology.
+  // If the user had that selected, fall back to "Share battery".
+  if (model === "solo_6_5kw" && state.configurationMode === "do_not_share") {
+    state.configurationMode = "share";
+  }
   reapplyAutoConfigIfNeeded();
   scheduleRender();
 }
@@ -1732,9 +1750,9 @@ function buildStructuredObservations(results) {
   const communication = [];
   const general = results.inverterLimitWarnings.slice();
   results.observations.forEach((line) => {
-    if (line.indexOf("Share Battery topology confirmed") !== -1 || line.indexOf("Do Not Share Battery") !== -1) topology.push(line);
-    else if (/^Group \d+:/.test(line)) groups.push(line);
-    else if (line.indexOf("Communication grouped") !== -1 || line.indexOf("Shared communication group") !== -1 || line.indexOf("Single inverter with multiple batteries") !== -1) communication.push(line);
+    if (line.indexOf("Share Battery setup") !== -1 || line.indexOf("Do Not Share setup") !== -1) topology.push(line);
+    else if (/^Group \d+/.test(line)) groups.push(line);
+    else if (line.indexOf("talks to the inverter") !== -1) communication.push(line);
     else general.push(line);
   });
   let html = '<div class="obsContainer">';
@@ -1796,7 +1814,7 @@ function buildSetupPanel(state, results) {
         html += '<div class="wizardStepBody">';
         html += '<label class="subFieldLabel">Inverter model</label>';
         html += '<select class="select" data-action="setInverterModel">';
-        ['envy_8kw', 'envy_10kw', 'envy_duo_21_envy_12kw'].forEach((key) => {
+        ['solo_6_5kw', 'envy_8kw', 'envy_10kw', 'envy_duo_21_envy_12kw'].forEach((key) => {
           const m = INVERTER_MODELS[key];
           const sel = state.inverterModel === key ? ' selected' : '';
           html += '<option value="' + key + '"' + sel + '>' + escapeHtml(m.label) + ' \u2014 ' + m.current + ' A' + (m.ports > 1 ? ' \u00d7 ' + m.ports + ' ports' : '') + '</option>';
@@ -1900,13 +1918,20 @@ function buildSetupPanel(state, results) {
         const sharingLabel = state.configurationMode === 'share' ? 'Share battery' : (state.configurationMode === 'do_not_share' ? 'Do not share battery' : 'No auto-config');
         html += '<div class="wizardStepSummary">' + sharingLabel + '</div>';
       } else {
+        const soloInverter = state.inverterModel === 'solo_6_5kw';
         html += '<div class="wizardStepBody">';
         html += '<div class="configButtonRow">';
         html += '<button class="btn' + (state.configurationMode === 'share' ? ' active' : '') + '" data-action="autoShare">Share battery</button>';
-        html += '<button class="btn' + (state.configurationMode === 'do_not_share' ? ' active' : '') + '" data-action="autoDoNotShare">Do not share battery</button>';
+        if (!soloInverter) {
+          html += '<button class="btn' + (state.configurationMode === 'do_not_share' ? ' active' : '') + '" data-action="autoDoNotShare">Do not share battery</button>';
+        }
         html += '</div>';
         html += '<div class="helper">Share battery auto-configures a shared layout using eWay connection points and enables all adjacent battery conductors.</div>';
-        html += '<div class="helper">Do not share battery splits batteries into isolated groups per inverter, with battery-to-battery conductors inside each group.</div>';
+        if (!soloInverter) {
+          html += '<div class="helper">Do not share battery splits batteries into isolated groups per inverter, with battery-to-battery conductors inside each group.</div>';
+        } else {
+          html += '<div class="helper">The Solo 6.5kW has a single terminal connection, so it only supports a shared battery layout.</div>';
+        }
         const sharingPicked = state.configurationMode === 'share' || state.configurationMode === 'do_not_share';
         html += '<div class="wizardContinueRow"><button class="wizardContinue" data-action="continueWizard" data-step="sharing"' + (sharingPicked ? '' : ' disabled') + '>Continue \u2192</button></div>';
         html += '</div>';
