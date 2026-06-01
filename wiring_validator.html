@@ -2387,6 +2387,98 @@ document.addEventListener('toggle', (e) => {
   detailsOpen[key] = t.open;
 }, true);
 
+// === URL parameter pre-fill ===
+// Lets an external configurator deep-link with
+// ?inverter=...&inverter_qty=...&battery=...&battery_qty=...
+// and have the System Setup pre-configured automatically. Missing or
+// unknown params just fall back to defaults.
+const URL_INVERTER_MAP = {
+  "envy duo 21": "envy_duo_21_envy_12kw",
+  "envy true 12kw": "envy_duo_21_envy_12kw",
+  "envy 12kw": "envy_duo_21_envy_12kw",
+  "envy 12k": "envy_duo_21_envy_12kw",
+  "envy 10k": "envy_10kw",
+  "envy 10kw": "envy_10kw",
+  "envy 8k": "envy_8kw",
+  "envy 8kw": "envy_8kw",
+  "solo 6.5k": "solo_6_5kw",
+  "solo 6.5kw": "solo_6_5kw",
+};
+const URL_BATTERY_MAP = {
+  "eboost 16": { model: "eboost" },
+  "eboost": { model: "eboost" },
+  "eflex max 5.4kwh": { model: "eflex_max" },
+  "eflex max": { model: "eflex_max" },
+  "eforce 9.6": { model: "eforce", modulesPerStack: 1 },
+  "eforce 19.2": { model: "eforce", modulesPerStack: 2 },
+  "eforce 28.8": { model: "eforce", modulesPerStack: 3 },
+};
+
+function applyUrlPreFill() {
+  let params;
+  try { params = new URLSearchParams(window.location.search); }
+  catch (e) { return false; }
+
+  const norm = (v) => (v || "").trim().toLowerCase();
+  const invModel = URL_INVERTER_MAP[norm(params.get("inverter"))];
+  const batConfig = URL_BATTERY_MAP[norm(params.get("battery"))];
+  const invQtyRaw = parseInt(params.get("inverter_qty"), 10);
+  const batQtyRaw = parseInt(params.get("battery_qty"), 10);
+  const invQty = Number.isFinite(invQtyRaw) && invQtyRaw > 0 ? invQtyRaw : null;
+  const batQty = Number.isFinite(batQtyRaw) && batQtyRaw > 0 ? batQtyRaw : null;
+
+  // Nothing provided/matched -- leave defaults untouched.
+  if (!invModel && !batConfig && invQty === null && batQty === null) return false;
+
+  // 1) Inverter model first (must precede share-mode reset for Solo).
+  if (invModel) {
+    state.inverterModel = invModel;
+    if (invModel === "solo_6_5kw" && state.configurationMode === "do_not_share") {
+      state.configurationMode = "share";
+    }
+  }
+
+  // 2) Battery model (sets limits used in step 4).
+  if (batConfig) {
+    state.batteryModel = batConfig.model;
+    state.batteryLayoutMode = "side_by_side"; // eFlex Max requires; others tolerate.
+  }
+
+  // 3) Inverter count.
+  const finalInvCount = invQty !== null ? Math.min(Math.max(1, invQty), 10) : state.inverterCount;
+
+  // 4) Battery count (or eForce module/stack layout).
+  if (batConfig && batConfig.model === "eforce") {
+    // For eForce, the battery name encodes modules-per-stack and battery_qty is
+    // the number of stacks. We pack uniform stacks, clamping to the model max.
+    const modulesPerStack = batConfig.modulesPerStack;
+    const stacks = batQty !== null ? batQty : 1;
+    const desired = stacks * modulesPerStack;
+    const total = Math.max(1, Math.min(EFORCE_MAX_BATTERY_COUNT, desired));
+    const sizes = [];
+    let remaining = total;
+    while (remaining > 0) {
+      const take = Math.min(modulesPerStack, remaining);
+      sizes.push(take);
+      remaining -= take;
+    }
+    state.eforceModuleCount = total;
+    resizeSystem(finalInvCount, sizes.length);
+    state.eforceStackSizes = sizes; // resizeSystem may default these; restore desired arrangement.
+  } else {
+    const target = batQty !== null ? batQty : state.batteryCount;
+    const maxBat = getMaxBatteryCountForModel(state.batteryModel);
+    const finalBatCount = Math.min(Math.max(1, target), maxBat);
+    resizeSystem(finalInvCount, finalBatCount);
+  }
+
+  // 5) Push past the wizard so the configured system is shown immediately.
+  markAllWizardStepsComplete();
+  return true;
+}
+
+applyUrlPreFill();
+
 // Initial render
 render();
 
