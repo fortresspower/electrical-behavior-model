@@ -1,1 +1,1 @@
-https://fortresspower.github.io/electrical-behavior-model/wiring_validator.html
+https://fortresspower.github.io/electrical-behavior-model/index.html
