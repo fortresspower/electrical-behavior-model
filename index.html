@@ -2607,13 +2607,21 @@ function applyUrlPreFill() {
     }
   }
 
+  // 1b) Inverter count.
+  const finalInvCount = invQty !== null ? Math.min(Math.max(1, invQty), 10) : state.inverterCount;
+  if (invQty !== null) {
+    state.inverterCount = finalInvCount;
+  }
+
+  // Auto-advance Inverter step if both model and qty are provided.
+  if (invModel && invQty !== null) {
+    continueWizardStep('inverter');
+  }
+
   // 2) Battery model only (do NOT pre-select layout mode — user configures that).
   if (batConfig) {
     state.batteryModel = batConfig.model;
   }
-
-  // 3) Inverter count.
-  const finalInvCount = invQty !== null ? Math.min(Math.max(1, invQty), 10) : state.inverterCount;
 
   // 4) Battery count (or eForce module/stack layout).
   if (batConfig && batConfig.model === "eforce") {
@@ -2640,7 +2648,12 @@ function applyUrlPreFill() {
     resizeSystem(finalInvCount, finalBatCount);
   }
 
-  // 5) Do NOT auto-complete the wizard — user must configure Layout, Sharing, Bus Rail, etc. manually.
+  // Auto-advance Battery step if both model and qty are provided.
+  if (batConfig && batQty !== null) {
+    continueWizardStep('battery');
+  }
+
+  // 5) User arrives at Layout or Sharing step with inverter & battery confirmed.
   return true;
 }
 
