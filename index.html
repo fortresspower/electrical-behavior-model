@@ -2607,10 +2607,9 @@ function applyUrlPreFill() {
     }
   }
 
-  // 2) Battery model (sets limits used in step 4).
+  // 2) Battery model only (do NOT pre-select layout mode — user configures that).
   if (batConfig) {
     state.batteryModel = batConfig.model;
-    state.batteryLayoutMode = "side_by_side"; // eFlex Max requires; others tolerate.
   }
 
   // 3) Inverter count.
@@ -2641,8 +2640,7 @@ function applyUrlPreFill() {
     resizeSystem(finalInvCount, finalBatCount);
   }
 
-  // 5) Push past the wizard so the configured system is shown immediately.
-  markAllWizardStepsComplete();
+  // 5) Do NOT auto-complete the wizard — user must configure Layout, Sharing, Bus Rail, etc. manually.
   return true;
 }
 
