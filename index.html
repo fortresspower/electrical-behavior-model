@@ -140,12 +140,233 @@ body { background: #f8fafc; color: #0f172a; font-family: "Rajdhani", Arial, sans
 .alertList { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .alertList.red { color: #7f1d1d; }
 .figureTitle { font-size: 18px; font-weight: 700; }
+
+/* ===================== Lead-capture gate ===================== */
+body.lg-locked { overflow: hidden; }
+.leadGate {
+  position: fixed; inset: 0; z-index: 9999;
+  background: #0f172a; background: rgba(15,23,42,0.92);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; overflow-y: auto;
+}
+.leadCard {
+  width: 100%; max-width: 440px; background: #ffffff;
+  border-radius: 14px; padding: 28px 26px 22px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+  font-family: inherit;
+}
+.leadCard .lg-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #2E9E6A; }
+.leadCard h2 { margin: 6px 0 6px; font-size: 22px; color: #1C5E62; }
+.leadCard .lg-sub { margin: 0 0 18px; font-size: 13px; line-height: 1.5; color: #475569; }
+.lg-field { margin-bottom: 14px; }
+.lg-field label { display: block; font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 5px; }
+.lg-field input {
+  width: 100%; box-sizing: border-box; padding: 10px 12px;
+  border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; color: #0f172a;
+  outline: none; transition: border-color .12s, box-shadow .12s;
+}
+.lg-field input:focus { border-color: #318188; box-shadow: 0 0 0 3px rgba(49,129,136,0.15); }
+.lg-field input.lg-invalid { border-color: #C0392B; box-shadow: 0 0 0 3px rgba(192,57,43,0.12); }
+.lg-err { min-height: 15px; font-size: 12px; color: #C0392B; margin-top: 4px; line-height: 1.3; }
+.lg-err.lg-advisory { color: #92400e; }
+.lg-btn {
+  width: 100%; margin-top: 6px; padding: 12px 14px;
+  background: #1C5E62; color: #fff; border: 0; border-radius: 9px;
+  font-size: 15px; font-weight: 700; cursor: pointer; transition: background .12s;
+}
+.lg-btn:hover:not(:disabled) { background: #164b4f; }
+.lg-btn:disabled { background: #94a3b8; cursor: default; }
+.lg-fineprint { margin: 14px 0 0; font-size: 11px; line-height: 1.5; color: #94a3b8; text-align: center; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
+
+<!-- ===================== Lead-capture gate ===================== -->
+<div id="leadGate" class="leadGate" role="dialog" aria-modal="true" aria-labelledby="lgTitle">
+  <div class="leadCard">
+    <div class="lg-eyebrow">Fortress Power</div>
+    <h2 id="lgTitle">Access the wiring validator</h2>
+    <p class="lg-sub">Enter your details to open the tool. A Fortress Power specialist may follow up to help with your installation.</p>
+    <div class="lg-field">
+      <label for="lgName">Name</label>
+      <input id="lgName" type="text" autocomplete="name" placeholder="Your full name" />
+      <div class="lg-err" id="lgNameErr"></div>
+    </div>
+    <div class="lg-field">
+      <label for="lgCompanyName">Company name</label>
+      <input id="lgCompanyName" type="text" autocomplete="organization" placeholder="Your company" />
+      <div class="lg-err" id="lgCompanyNameErr"></div>
+    </div>
+    <div class="lg-field">
+      <label for="lgCompanyEmail">Company email</label>
+      <input id="lgCompanyEmail" type="email" autocomplete="email" inputmode="email" placeholder="you@yourcompany.com" />
+      <div class="lg-err" id="lgCompanyErr"></div>
+    </div>
+    <div class="lg-field">
+      <label for="lgZip">Zipcode</label>
+      <input id="lgZip" type="text" autocomplete="postal-code" placeholder="e.g. 19047, K1A 0B1, 01310-100" />
+      <div class="lg-err" id="lgZipErr"></div>
+    </div>
+    <button id="lgSubmit" class="lg-btn" type="button">Open the validator</button>
+    <div class="lg-err" id="lgFormErr" style="text-align:center;margin-top:8px"></div>
+    <p class="lg-fineprint">By submitting, you agree a Fortress Power representative may contact you about your installation.</p>
+  </div>
+</div>
+
+<script>
+/* Fast path: if this visitor already submitted, hide the gate before paint. */
+(function(){
+  try {
+    if (localStorage.getItem('fp_wv_lead') === '1') {
+      var g = document.getElementById('leadGate'); if (g) g.style.display = 'none';
+    } else {
+      document.body.classList.add('lg-locked');
+    }
+  } catch (e) { document.body.classList.add('lg-locked'); }
+})();
+</script>
+
+<script>
+(function(){
+  /* ===================== LEAD-CAPTURE CONFIG =====================
+     This static page cannot send email on its own. On submit it POSTs the
+     lead to a relay, which emails FortressPowerSalesTeam@fortresspower.com.
+
+     DEFAULT: FormSubmit (https://formsubmit.co) — no account, no API key.
+       • The FIRST submission triggers a one-time activation email to the
+         destination address. Someone on that inbox must click its link once
+         before leads start flowing.
+       • To keep the raw address out of page source: activate once, then
+         replace the address below with the hashed alias FormSubmit gives you
+         (e.g. https://formsubmit.co/ajax/abc123hash).
+
+     ALTERNATIVES (swap LEAD_ENDPOINT + payload):
+       • Web3Forms: LEAD_ENDPOINT = 'https://api.web3forms.com/submit', add
+         access_key to the payload (destination set in the Web3Forms dashboard).
+       • Your own relay (Cloudflare Worker / Google Apps Script / SES): point
+         LEAD_ENDPOINT at it and adjust the payload/response parsing.
+
+     REQUIRE_DELIVERY: true = strict gate — the tool only opens once the relay
+       accepts the lead (so an email is actually sent). Set false to "fail open"
+       (let the user in even if the relay is unreachable) if you'd rather never
+       lose a visitor to a relay hiccup.
+  ================================================================ */
+  var LEAD_ENDPOINT   = 'https://formsubmit.co/ajax/FortressPowerSalesTeam@fortresspower.com';
+  var REQUIRE_DELIVERY = true;
+
+  var gate     = document.getElementById('leadGate');
+  var elName   = document.getElementById('lgName');
+  var elCoName = document.getElementById('lgCompanyName');
+  var elCo     = document.getElementById('lgCompanyEmail');
+  var elZip    = document.getElementById('lgZip');
+  var btn      = document.getElementById('lgSubmit');
+  var formErr  = document.getElementById('lgFormErr');
+
+  var EMAIL_RE  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // Permissive international postal code (US, Puerto Rico, Canada, and Latin America).
+  // 3–12 chars, letters/digits with internal spaces or hyphens; a digit is required
+  // separately. Deliberately forgiving — this is lead capture, not address verification.
+  var POSTAL_RE = /^[A-Za-z0-9][A-Za-z0-9 -]{1,10}[A-Za-z0-9]$/;
+
+  function setErr(id, msg, advisory){
+    var n = document.getElementById(id);
+    n.textContent = msg || '';
+    n.classList.toggle('lg-advisory', !!advisory);
+  }
+  function mark(el, bad){ el.classList.toggle('lg-invalid', !!bad); }
+
+  function validate(){
+    var ok = true;
+    var name = elName.value.trim(), coName = elCoName.value.trim(), co = elCo.value.trim(), zip = elZip.value.trim();
+
+    if (name.length < 2) { setErr('lgNameErr','Enter your name.'); mark(elName,true); ok=false; }
+    else { setErr('lgNameErr',''); mark(elName,false); }
+
+    if (coName.length < 2) { setErr('lgCompanyNameErr','Enter your company name.'); mark(elCoName,true); ok=false; }
+    else { setErr('lgCompanyNameErr',''); mark(elCoName,false); }
+
+    if (!EMAIL_RE.test(co)) { setErr('lgCompanyErr','Enter a valid company email.'); mark(elCo,true); ok=false; }
+    else { setErr('lgCompanyErr',''); mark(elCo,false); }
+
+    if (!(POSTAL_RE.test(zip) && /\d/.test(zip))) { setErr('lgZipErr','Enter a valid ZIP or postal code.'); mark(elZip,true); ok=false; }
+    else { setErr('lgZipErr',''); mark(elZip,false); }
+
+    return ok;
+  }
+
+  function unlock(){
+    try { localStorage.setItem('fp_wv_lead','1'); } catch (e) {}
+    if (gate) gate.style.display = 'none';
+    document.body.classList.remove('lg-locked');
+  }
+
+  function submit(){
+    formErr.textContent = '';
+    if (!validate()) return;
+    var label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Submitting…';
+
+    var name         = elName.value.trim();
+    var companyName  = elCoName.value.trim();
+    var companyEmail = elCo.value.trim();
+    var zip          = elZip.value.trim();
+
+    function fmtWhen(d){
+      try {
+        return d.toLocaleString('en-US', {
+          year: 'numeric', month: 'short', day: 'numeric',
+          hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+        });
+      } catch (e) { return d.toISOString(); }
+    }
+
+    // Keys become the row labels in the emailed table, so keep them human-readable.
+    var payload = {
+      'Name':          name,
+      'Company name':  companyName,
+      'Company email': companyEmail,
+      'Zipcode':       zip,
+      'Submitted':     fmtWhen(new Date()),
+      'Source':        'wiring.fortresspower.com',
+      _replyto:  companyEmail,                             // "Reply" goes to the lead
+      _subject:  'New wiring validator lead — ' + companyName,
+      _template: 'table',
+      _captcha:  'false'
+    };
+
+    fetch(LEAD_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, j: j }; });
+    })
+    .then(function(res){
+      var delivered = res.ok && res.j.success !== false && res.j.success !== 'false';
+      if (delivered) { unlock(); return; }
+      throw new Error((res.j && res.j.message) || 'Submission failed');
+    })
+    .catch(function(){
+      if (REQUIRE_DELIVERY) {
+        btn.disabled = false; btn.textContent = label;
+        formErr.textContent = 'Could not submit right now. Please check your connection and try again.';
+      } else {
+        unlock(); // fail-open
+      }
+    });
+  }
+
+  btn.addEventListener('click', submit);
+  [elName, elCoName, elCo, elZip].forEach(function(el){
+    el.addEventListener('keydown', function(e){ if (e.key === 'Enter'){ e.preventDefault(); submit(); } });
+  });
+})();
+</script>
+
 <script>
 (function() {
 "use strict";
@@ -2421,6 +2642,7 @@ function render() {
   html += '<h1 class="title">Battery &amp; inverter wiring validator for installers</h1>';
   html += '<p class="subtitle">Plan a Fortress Power battery + inverter installation before you wire it. Pick your inverter model, battery model (eBoost or eForce), and quantities; the tool auto-configures a topology and checks conductor currents, per-battery max discharge limits, connection-point terminal counts, and eWay node ratings. Anything out of spec turns red with a plain-language explanation.</p>';
   html += '<p class="subtitle">This is a <strong>theoretical</strong> validator: it analyzes the worst case using the <strong>maximum rated current output</strong> of both the inverters and the batteries. Real-world operation under partial load will be less stressful than what is modeled here — so any layout that passes here has headroom in practice, and any layout that fails here will fail under the conditions it is designed to handle.</p>';
+  html += '<p class="subtitle" style="max-width:980px;margin-top:12px;padding:10px 14px;border-left:4px solid #d97706;background:#fffbeb;border-radius:4px;color:#334155"><strong>Battery-to-battery cabling rule.</strong> Regardless of the amperage shown between batteries, whenever a battery is paired one-to-one with an Envy 12&nbsp;kW, Envy Duo, or Envy 10&nbsp;kW inverter, <strong>always use cable rated to handle 250&nbsp;A between batteries.</strong></p>';
   html += '<p class="subtitle">For education and planning only. <strong>A licensed electrician and a stamped engineering review are required before installation.</strong></p>';
   html += '</div>';
   html += '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:10px">';
