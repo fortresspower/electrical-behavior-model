@@ -167,6 +167,9 @@ body.lg-locked { overflow: hidden; }
 }
 .lg-field input:focus { border-color: #318188; box-shadow: 0 0 0 3px rgba(49,129,136,0.15); }
 .lg-field input.lg-invalid { border-color: #C0392B; box-shadow: 0 0 0 3px rgba(192,57,43,0.12); }
+.lg-field select { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; color: #0f172a; background: #fff; outline: none; appearance: auto; transition: border-color .12s, box-shadow .12s; }
+.lg-field select:focus { border-color: #318188; box-shadow: 0 0 0 3px rgba(49,129,136,0.15); }
+.lg-field select.lg-invalid { border-color: #C0392B; box-shadow: 0 0 0 3px rgba(192,57,43,0.12); }
 .lg-err { min-height: 15px; font-size: 12px; color: #C0392B; margin-top: 4px; line-height: 1.3; }
 .lg-err.lg-advisory { color: #92400e; }
 .lg-btn {
@@ -206,6 +209,35 @@ body.lg-locked { overflow: hidden; }
       <div class="lg-err" id="lgCompanyErr"></div>
     </div>
     <div class="lg-field">
+      <label for="lgCountry">Country</label>
+      <select id="lgCountry" autocomplete="country">
+        <option value="">Select country…</option>
+        <option value="US">United States</option>
+        <option value="PR">Puerto Rico</option>
+        <option value="CA">Canada</option>
+        <option value="MX">Mexico</option>
+        <option value="AR">Argentina</option>
+        <option value="BO">Bolivia</option>
+        <option value="BR">Brazil</option>
+        <option value="CL">Chile</option>
+        <option value="CO">Colombia</option>
+        <option value="CR">Costa Rica</option>
+        <option value="DO">Dominican Republic</option>
+        <option value="EC">Ecuador</option>
+        <option value="SV">El Salvador</option>
+        <option value="GT">Guatemala</option>
+        <option value="HN">Honduras</option>
+        <option value="NI">Nicaragua</option>
+        <option value="PA">Panama</option>
+        <option value="PY">Paraguay</option>
+        <option value="PE">Peru</option>
+        <option value="UY">Uruguay</option>
+        <option value="VE">Venezuela</option>
+        <option value="OT">Other</option>
+      </select>
+      <div class="lg-err" id="lgCountryErr"></div>
+    </div>
+    <div class="lg-field">
       <label for="lgZip">Zipcode</label>
       <input id="lgZip" type="text" autocomplete="postal-code" placeholder="e.g. 19047, K1A 0B1, 01310-100" />
       <div class="lg-err" id="lgZipErr"></div>
@@ -217,16 +249,9 @@ body.lg-locked { overflow: hidden; }
 </div>
 
 <script>
-/* Fast path: if this visitor already submitted, hide the gate before paint. */
-(function(){
-  try {
-    if (localStorage.getItem('fp_wv_lead') === '1') {
-      var g = document.getElementById('leadGate'); if (g) g.style.display = 'none';
-    } else {
-      document.body.classList.add('lg-locked');
-    }
-  } catch (e) { document.body.classList.add('lg-locked'); }
-})();
+/* Lead-gen tool: always require the form. No persistence — the gate shows on
+   every page load, so the same installer re-enters their details each visit. */
+(function(){ document.body.classList.add('lg-locked'); })();
 </script>
 
 <script>
@@ -261,6 +286,7 @@ body.lg-locked { overflow: hidden; }
   var elName   = document.getElementById('lgName');
   var elCoName = document.getElementById('lgCompanyName');
   var elCo     = document.getElementById('lgCompanyEmail');
+  var elCountry = document.getElementById('lgCountry');
   var elZip    = document.getElementById('lgZip');
   var btn      = document.getElementById('lgSubmit');
   var formErr  = document.getElementById('lgFormErr');
@@ -291,6 +317,9 @@ body.lg-locked { overflow: hidden; }
     if (!EMAIL_RE.test(co)) { setErr('lgCompanyErr','Enter a valid company email.'); mark(elCo,true); ok=false; }
     else { setErr('lgCompanyErr',''); mark(elCo,false); }
 
+    if (!elCountry.value) { setErr('lgCountryErr','Select your country.'); mark(elCountry,true); ok=false; }
+    else { setErr('lgCountryErr',''); mark(elCountry,false); }
+
     if (!(POSTAL_RE.test(zip) && /\d/.test(zip))) { setErr('lgZipErr','Enter a valid ZIP or postal code.'); mark(elZip,true); ok=false; }
     else { setErr('lgZipErr',''); mark(elZip,false); }
 
@@ -298,9 +327,99 @@ body.lg-locked { overflow: hidden; }
   }
 
   function unlock(){
-    try { localStorage.setItem('fp_wv_lead','1'); } catch (e) {}
     if (gate) gate.style.display = 'none';
     document.body.classList.remove('lg-locked');
+  }
+
+  function withTimeout(promise, ms){
+    return Promise.race([
+      promise,
+      new Promise(function(resolve){ setTimeout(function(){ resolve(null); }, ms); })
+    ]);
+  }
+
+  // Best-effort city/region lookup from country + postal code (no API key).
+  // Zippopotam first (fast, clean); OpenStreetMap Nominatim as a broader-coverage
+  // fallback for LATAM codes Zippopotam lacks. Resolves to a string or null and
+  // never rejects — a failed lookup must not block the lead.
+  function lookupPlace(iso, zip){
+    if (!iso || iso === 'OT') return Promise.resolve(null);
+    var z = zip.replace(/\s+/g, '');
+    var zpCountry = (iso === 'PR') ? 'us' : iso.toLowerCase();
+
+    var viaZippo = fetch('https://api.zippopotam.us/' + zpCountry + '/' + encodeURIComponent(z))
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(j){
+        if (j && j.places && j.places.length){
+          var p = j.places[0];
+          return [p['place name'] || '', p['state'] || p['state abbreviation'] || '']
+            .filter(Boolean).join(', ') || null;
+        }
+        return null;
+      })
+      .catch(function(){ return null; });
+
+    return withTimeout(viaZippo, 2500).then(function(place){
+      if (place) return place;
+      var nomCountry = (iso === 'PR') ? 'PR' : iso;
+      var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1'
+              + '&country=' + encodeURIComponent(nomCountry)
+              + '&postalcode=' + encodeURIComponent(zip);
+      var viaNom = fetch(url, { headers: { 'Accept': 'application/json' } })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(arr){
+          if (arr && arr.length){
+            var a = arr[0].address || {};
+            var city = a.city || a.town || a.village || a.municipality || a.county || '';
+            var region = a.state || a.region || a.province || '';
+            var sp = [city, region].filter(Boolean).join(', ');
+            if (sp) return sp;
+            if (arr[0].display_name) return arr[0].display_name.split(',').slice(0, 2).join(',').trim();
+          }
+          return null;
+        })
+        .catch(function(){ return null; });
+      return withTimeout(viaNom, 2500);
+    });
+  }
+
+  function fmtWhen(d){
+    try {
+      return d.toLocaleString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+      });
+    } catch (e) { return d.toISOString(); }
+  }
+
+  function postLead(payload, label){
+    // Send as multipart FormData (no JSON Content-Type) so the browser doesn't
+    // fire a CORS preflight. The [lead] console logs show the real cause on failure.
+    var fd = new FormData();
+    Object.keys(payload).forEach(function(k){ fd.append(k, payload[k]); });
+
+    fetch(LEAD_ENDPOINT, { method: 'POST', headers: { 'Accept': 'application/json' }, body: fd })
+      .then(function(r){
+        return r.text().then(function(t){
+          var j = {}; try { j = JSON.parse(t); } catch (e) {}
+          return { ok: r.ok, status: r.status, j: j, raw: t };
+        });
+      })
+      .then(function(res){
+        console.log('[lead] relay responded', res.status, res.raw);
+        var delivered = res.ok && res.j.success !== false && res.j.success !== 'false';
+        if (delivered) { unlock(); return; }
+        throw new Error((res.j && res.j.message) || ('Relay returned HTTP ' + res.status));
+      })
+      .catch(function(err){
+        console.error('[lead] submit failed:', (err && err.message) ? err.message : err);
+        if (REQUIRE_DELIVERY) {
+          btn.disabled = false; btn.textContent = label;
+          formErr.textContent = 'Could not submit right now. Please check your connection and try again.';
+        } else {
+          unlock(); // fail-open
+        }
+      });
   }
 
   function submit(){
@@ -313,50 +432,27 @@ body.lg-locked { overflow: hidden; }
     var companyName  = elCoName.value.trim();
     var companyEmail = elCo.value.trim();
     var zip          = elZip.value.trim();
+    var iso          = elCountry.value;
+    var countryName  = (elCountry.options[elCountry.selectedIndex] || {}).text || iso;
 
-    function fmtWhen(d){
-      try {
-        return d.toLocaleString('en-US', {
-          year: 'numeric', month: 'short', day: 'numeric',
-          hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
-        });
-      } catch (e) { return d.toISOString(); }
-    }
-
-    // Keys become the row labels in the emailed table, so keep them human-readable.
-    var payload = {
-      'Name':          name,
-      'Company name':  companyName,
-      'Company email': companyEmail,
-      'Zipcode':       zip,
-      'Submitted':     fmtWhen(new Date()),
-      'Source':        'wiring.fortresspower.com',
-      _replyto:  companyEmail,                             // "Reply" goes to the lead
-      _subject:  'New wiring validator lead — ' + companyName,
-      _template: 'table',
-      _captcha:  'false'
-    };
-
-    fetch(LEAD_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    .then(function(r){
-      return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, j: j }; });
-    })
-    .then(function(res){
-      var delivered = res.ok && res.j.success !== false && res.j.success !== 'false';
-      if (delivered) { unlock(); return; }
-      throw new Error((res.j && res.j.message) || 'Submission failed');
-    })
-    .catch(function(){
-      if (REQUIRE_DELIVERY) {
-        btn.disabled = false; btn.textContent = label;
-        formErr.textContent = 'Could not submit right now. Please check your connection and try again.';
-      } else {
-        unlock(); // fail-open
-      }
+    lookupPlace(iso, zip).then(function(place){
+      console.log('[lead] resolved location:', place || '(none)');
+      // Keys become the row labels in the emailed table, so keep them human-readable.
+      var payload = {
+        'Name':          name,
+        'Company name':  companyName,
+        'Company email': companyEmail,
+        'Country':       countryName,
+        'Zipcode':       zip,
+        'Location':      place || '\u2014',
+        'Submitted':     fmtWhen(new Date()),
+        'Source':        'wiring.fortresspower.com',
+        _replyto:  companyEmail,
+        _subject:  'New wiring validator lead \u2014 ' + companyName + ' (' + (place || countryName) + ')',
+        _template: 'table',
+        _captcha:  'false'
+      };
+      postLead(payload, label);
     });
   }
 
