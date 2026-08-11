@@ -257,29 +257,28 @@ body.lg-locked { overflow: hidden; }
 <script>
 (function(){
   /* ===================== LEAD-CAPTURE CONFIG =====================
-     This static page cannot send email on its own. On submit it POSTs the
-     lead to a relay, which emails FortressPowerSalesTeam@fortresspower.com.
+     This static page cannot send email on its own. On submit it POSTs the lead
+     (as URL-encoded form data — a "simple" request, so no CORS preflight) to a
+     relay, which emails FortressPowerSalesTeam@fortresspower.com.
 
-     DEFAULT: FormSubmit (https://formsubmit.co) — no account, no API key.
-       • The FIRST submission triggers a one-time activation email to the
-         destination address. Someone on that inbox must click its link once
-         before leads start flowing.
-       • To keep the raw address out of page source: activate once, then
-         replace the address below with the hashed alias FormSubmit gives you
-         (e.g. https://formsubmit.co/ajax/abc123hash).
+     RELAY: a Google Apps Script web app you own (see APPS_SCRIPT_SETUP.md).
+       It emails each lead FROM a Fortress account — internal mail, so it isn't
+       spam-filtered the way a third-party relay is — and can also log to a Sheet.
 
-     ALTERNATIVES (swap LEAD_ENDPOINT + payload):
-       • Web3Forms: LEAD_ENDPOINT = 'https://api.web3forms.com/submit', add
-         access_key to the payload (destination set in the Web3Forms dashboard).
-       • Your own relay (Cloudflare Worker / Google Apps Script / SES): point
-         LEAD_ENDPOINT at it and adjust the payload/response parsing.
+       ► Paste your deployed web-app /exec URL into LEAD_ENDPOINT below.
+         Deploy → New deployment → Web app → Execute as: Me →
+         Who has access: Anyone → copy the URL ending in /exec.
+
+       The Apps Script reads these payload fields: the visible ones become the
+       email body; _replyto sets Reply-To; _subject sets the subject. The
+       _template/_captcha fields are harmless leftovers it ignores.
 
      REQUIRE_DELIVERY: true = strict gate — the tool only opens once the relay
        accepts the lead (so an email is actually sent). Set false to "fail open"
        (let the user in even if the relay is unreachable) if you'd rather never
        lose a visitor to a relay hiccup.
   ================================================================ */
-  var LEAD_ENDPOINT   = 'https://formsubmit.co/ajax/FortressPowerSalesTeam@fortresspower.com';
+  var LEAD_ENDPOINT    = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';   // ...script.google.com/macros/s/XXXX/exec
   var REQUIRE_DELIVERY = true;
 
   var gate     = document.getElementById('leadGate');
@@ -393,12 +392,13 @@ body.lg-locked { overflow: hidden; }
   }
 
   function postLead(payload, label){
-    // Send as multipart FormData (no JSON Content-Type) so the browser doesn't
-    // fire a CORS preflight. The [lead] console logs show the real cause on failure.
-    var fd = new FormData();
-    Object.keys(payload).forEach(function(k){ fd.append(k, payload[k]); });
+    // URL-encoded body: a CORS "simple" request (no preflight) that Apps Script
+    // parses straight into e.parameter. The [lead] console logs show the real
+    // cause on failure.
+    var body = new URLSearchParams();
+    Object.keys(payload).forEach(function(k){ body.append(k, payload[k]); });
 
-    fetch(LEAD_ENDPOINT, { method: 'POST', headers: { 'Accept': 'application/json' }, body: fd })
+    fetch(LEAD_ENDPOINT, { method: 'POST', body: body })
       .then(function(r){
         return r.text().then(function(t){
           var j = {}; try { j = JSON.parse(t); } catch (e) {}
