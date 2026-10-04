@@ -415,7 +415,7 @@ body.lg-locked { overflow: hidden; }
         console.error('[lead] submit failed:', (err && err.message) ? err.message : err);
         if (REQUIRE_DELIVERY) {
           btn.disabled = false; btn.textContent = label;
-          formErr.textContent = 'Could not submit right now. Please check your connection and try again.';
+          formErr.textContent = 'This site is under maintenance. Please check again later.';
         } else {
           unlock(); // fail-open
         }
