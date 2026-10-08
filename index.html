@@ -505,7 +505,7 @@ const NANO_BATTERY_MODELS = {
 function isNanoBatteryModel(m) { return Object.prototype.hasOwnProperty.call(NANO_BATTERY_MODELS, m); }
 function isNanoInverterModel(k) { return !!(INVERTER_MODELS[k] && INVERTER_MODELS[k].family === "nano"); }
 function isNanoDualPortCase(inverterModelKey, batteryModel, batteriesOnInverter) {
-  // 60kW with a single Nano battery (40 or 60 kWh, both 100 A): both ports land on its busbar.
+  // 60kW landing on one battery (the first of its group): both ports go to that battery's busbar.
   const m = INVERTER_MODELS[inverterModelKey];
   return !!(m && m.nanoBothPorts && isNanoBatteryModel(batteryModel) && batteriesOnInverter === 1);
 }
@@ -557,8 +557,8 @@ const INVERTER_MODELS = {
   envy_duo_21_envy_12kw: { label: "Envy Duo 21 / Envy 12kW", current: 250, maxPorts: 2, bridgedPorts: true },
   // eSpire Nano: two independent (non-bridged) ports; `current` is PER PORT.
   // `current` = per-port rating, `totalCurrent` = max inverter output across both ports.
-  // 30kW: one port is enough, so it is modeled at the 84 A port rating. 60kW: always both ports; with a single battery,
-  // both ports land on that battery's busbar.
+  // 30kW: one port is enough, so it is modeled at the 84 A port rating.
+  // 60kW: always both ports, both landing on the first battery's busbar.
   espire_nano_30kw: { label: "eSpire Nano 30kW", current: 84, totalCurrent: 84, maxPorts: 2, bridgedPorts: false, perPortCurrent: true, family: "nano", nanoBothPorts: false },
   espire_nano_60kw: { label: "eSpire Nano 60kW", current: 84, totalCurrent: 100, maxPorts: 2, bridgedPorts: false, perPortCurrent: true, family: "nano", nanoBothPorts: true },
 };
@@ -943,9 +943,9 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
     observations.push("Each eSpire Nano inverter runs its own battery group. Sharing batteries between inverters isn't supported.");
     advisories.push("The " + model.label + " outputs up to " + formatAmps(model.totalCurrent || model.current) + " A across two independent battery ports rated " + formatAmps(model.current) + " A each. The ports are not linked inside the unit.");
     advisories.push(model.nanoBothPorts
-      ? "The " + model.label + " uses both battery ports. With one battery, both ports land on that battery's busbar; with more, port 1 goes to the first battery and port 2 to the last."
-      : "The " + model.label + " uses one battery port (port 1).");
-    advisories.push("Batteries on the same inverter are always paralleled together within their group.");
+      ? "The " + model.label + " lands both battery ports on the first battery's busbar."
+      : "The " + model.label + " uses one battery port (port 1), landing on the first battery.");
+    advisories.push("The inverter ties into the first battery of its group; the other batteries daisy-chain from there.");
     advisories.push("Connect battery communication with an RJ45 splitter (parallel). Do not daisy-chain the batteries.");
     if (inverterCount > NANO_MAX_INVERTER_COUNT) {
       alarms.push("This system has " + inverterCount + " eSpire Nano inverters. Up to " + NANO_MAX_INVERTER_COUNT + " can run in parallel.");
@@ -964,7 +964,7 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
         if (group.some((b) => ((directFlows[inv] || [])[b] || 0) > 0)) { groupsTouched += 1; group.forEach((b) => reach.add(b)); }
       });
       if (groupsTouched > 1) {
-        alarms.push(inverterNames[inv] + "'s batteries aren't paralleled together. On eSpire Nano, every battery on an inverter must be paralleled within its group.");
+        alarms.push(inverterNames[inv] + "'s batteries aren't in one chain. On eSpire Nano, the inverter ties into the first battery and the rest daisy-chain from it.");
       }
       if (reach.size > NANO_MAX_BATTERIES_PER_INVERTER) {
         alarms.push(inverterNames[inv] + " is connected to " + reach.size + " batteries. An eSpire Nano supports up to " + NANO_MAX_BATTERIES_PER_INVERTER + " batteries per inverter.");
@@ -1280,10 +1280,10 @@ function arrangeNanoGroups(total, inverterCount) {
 
 function applyNanoConfiguration() {
   // Builds the Nano topology from state.nanoGroupSizes. Batteries are numbered
-  // contiguously per inverter and always paralleled within their own group.
-  //   60kW: port 1 -> first battery, port 2 -> last battery (single battery:
-  //         both ports to its busbar, handled in the analyzer).
-  //   30kW: port 1 -> first battery only.
+  // contiguously per inverter. The inverter ties into the FIRST battery of its
+  // group and the rest daisy-chain from there.
+  //   60kW: both ports -> first battery's busbar (dual-port, handled in the analyzer).
+  //   30kW: port 1 -> first battery.
   const inv = state.inverterCount;
   let sizes = (state.nanoGroupSizes || []).slice(0, inv);
   while (sizes.length < inv) sizes.push(0);
@@ -1292,13 +1292,11 @@ function applyNanoConfiguration() {
   const bat = sizes.reduce((a, b) => a + b, 0);
   const conn = matrix(inv, bat, false);
   const links = Array(Math.max(0, bat - 1)).fill(false);
-  const bothPorts = !!(INVERTER_MODELS[state.inverterModel] || {}).nanoBothPorts;
   let cursor = 0;
   sizes.forEach((g, i) => {
     if (g === 0) return;
-    for (let k = 0; k < g - 1; k += 1) links[cursor + k] = true;          // parallel the group
-    conn[i][cursor] = true;                                               // port 1
-    if (bothPorts && g > 1) conn[i][cursor + g - 1] = true;               // port 2 (60kW)
+    for (let k = 0; k < g - 1; k += 1) links[cursor + k] = true;          // daisy chain B1 -> B2 -> B3
+    conn[i][cursor] = true;                                               // inverter -> first battery
     cursor += g;
   });
   state.nanoGroupSizes = sizes;
@@ -2664,15 +2662,16 @@ function buildSetupPanel(state, results) {
         html += '<div style="font-size:12px;color:#475569">' + bat + ' batter' + (bat === 1 ? 'y' : 'ies') + ' \u00b7 ' + (bat * unitKwh) + ' kWh total</div>';
         html += '<button class="btn" data-action="nanoAutoArrange">Auto-arrange</button>';
         html += '</div>';
-        html += '<div class="helper" style="margin-bottom:8px">Pick 0\u20133 batteries for each inverter. Batteries on the same inverter are always paralleled together. The 60kW uses both ports (with one battery, both land on its busbar); the 30kW uses port 1.</div>';
+        html += '<div class="helper" style="margin-bottom:8px">Pick 0\u20133 batteries for each inverter. The inverter ties into the first battery and the rest daisy-chain from it. The 60kW lands both ports on the first battery\u2019s busbar; the 30kW uses port 1.</div>';
         let cursor = 0;
         sizes.forEach((g, i) => {
           const b = (k) => 'B' + (cursor + k + 1);
           const bothPorts = !!(INVERTER_MODELS[state.inverterModel] || {}).nanoBothPorts;
-          const chain = Array.from({ length: g }, (_, k) => b(k)).join(' \u2225 ');
+          const landing = bothPorts ? 'Port 1 + Port 2 \u2192 ' + b(0) + ' busbar' : 'Port 1 \u2192 ' + b(0);
+          const chain = Array.from({ length: g }, (_, k) => b(k)).join(' \u2192 ');
           const ports = g === 0 ? 'No batteries'
-            : g === 1 ? (bothPorts ? 'Port 1 + Port 2: ' + b(0) + ' (both ports to the battery busbar)' : 'Port 1: ' + b(0))
-            : chain + ' (paralleled) \u00b7 Port 1: ' + b(0) + (bothPorts ? ' \u00b7 Port 2: ' + b(g - 1) : '');
+            : g === 1 ? landing
+            : landing + ' \u00b7 daisy chain ' + chain;
           html += '<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;flex-wrap:wrap">';
           html += '<span style="min-width:30px;font-weight:600">I' + (i + 1) + '</span>';
           [0, 1, 2, 3].forEach((n) => {
@@ -3353,3 +3352,5 @@ render();
 </script>
 </body>
 </html>
+
+
