@@ -557,9 +557,9 @@ const INVERTER_MODELS = {
   envy_duo_21_envy_12kw: { label: "Envy Duo 21 / Envy 12kW", current: 250, maxPorts: 2, bridgedPorts: true },
   // eSpire Nano: two independent (non-bridged) ports; `current` is PER PORT.
   // `current` = per-port rating, `totalCurrent` = max inverter output across both ports.
-  // 30kW: one port is enough, so it is modeled at the 84 A port rating.
-  // 60kW: always both ports, both landing on the first battery's busbar.
-  espire_nano_30kw: { label: "eSpire Nano 30kW", current: 84, totalCurrent: 84, maxPorts: 2, bridgedPorts: false, perPortCurrent: true, family: "nano", nanoBothPorts: false },
+  // Both models always use both ports, landing on the first battery's busbar.
+  // 30kW totalCurrent (84 A) is a placeholder until its rated max output is confirmed.
+  espire_nano_30kw: { label: "eSpire Nano 30kW", current: 84, totalCurrent: 84, maxPorts: 2, bridgedPorts: false, perPortCurrent: true, family: "nano", nanoBothPorts: true },
   espire_nano_60kw: { label: "eSpire Nano 60kW", current: 84, totalCurrent: 100, maxPorts: 2, bridgedPorts: false, perPortCurrent: true, family: "nano", nanoBothPorts: true },
 };
 
@@ -2662,7 +2662,7 @@ function buildSetupPanel(state, results) {
         html += '<div style="font-size:12px;color:#475569">' + bat + ' batter' + (bat === 1 ? 'y' : 'ies') + ' \u00b7 ' + (bat * unitKwh) + ' kWh total</div>';
         html += '<button class="btn" data-action="nanoAutoArrange">Auto-arrange</button>';
         html += '</div>';
-        html += '<div class="helper" style="margin-bottom:8px">Pick 0\u20133 batteries for each inverter. The inverter ties into the first battery and the rest daisy-chain from it. The 60kW lands both ports on the first battery\u2019s busbar; the 30kW uses port 1.</div>';
+        html += '<div class="helper" style="margin-bottom:8px">Pick 0\u20133 batteries for each inverter. The inverter ties into the first battery and the rest daisy-chain from it. Both ports land on the first battery\u2019s busbar.</div>';
         let cursor = 0;
         sizes.forEach((g, i) => {
           const b = (k) => 'B' + (cursor + k + 1);
@@ -3064,7 +3064,7 @@ function render() {
   html += '<h1 class="title">Battery &amp; inverter wiring validator for installers</h1>';
   html += '<p class="subtitle">Plan a Fortress Power battery + inverter installation before you wire it. Pick your inverter model, battery model (eBoost or eForce), and quantities; the tool auto-configures a topology and checks conductor currents, per-battery max discharge limits, connection-point terminal counts, and eWay node ratings. Anything out of spec turns red with a plain-language explanation.</p>';
   html += '<p class="subtitle">This is a <strong>theoretical</strong> validator: it analyzes the worst case using the <strong>maximum rated current output</strong> of both the inverters and the batteries. Real-world operation under partial load will be less stressful than what is modeled here — so any layout that passes here has headroom in practice, and any layout that fails here will fail under the conditions it is designed to handle.</p>';
-  html += '<p class="subtitle" style="max-width:980px;margin-top:12px;padding:10px 14px;border-left:4px solid #d97706;background:#fffbeb;border-radius:4px;color:#334155"><strong>Battery-to-battery cabling rule.</strong> Regardless of the amperage shown between batteries, whenever a battery is paired one-to-one with an Envy 12&nbsp;kW, Envy Duo, or Envy 10&nbsp;kW inverter, <strong>always use cable rated to handle 250&nbsp;A between batteries.</strong></p>';
+  html += '<p class="subtitle" style="max-width:980px;margin-top:12px;padding:10px 14px;border-left:4px solid #d97706;background:#fffbeb;border-radius:4px;color:#334155"><strong>Battery-to-battery cabling rule.</strong> Regardless of the amperage shown between batteries, whenever a battery is paired one-to-one with an Envy 12&nbsp;kW, Envy Duo, or Envy 10&nbsp;kW inverter, <strong>always use cable rated to handle 250&nbsp;A between batteries.</strong> If you\u2019re using an eSpire Nano system, <strong>use the included cables or UL-listed, battery-rated cable.</strong></p>';
   html += '<p class="subtitle">For education and planning only. <strong>A licensed electrician and a stamped engineering review are required before installation.</strong></p>';
   html += '</div>';
   html += '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:10px">';
@@ -3352,5 +3352,3 @@ render();
 </script>
 </body>
 </html>
-
-
