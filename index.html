@@ -602,8 +602,25 @@ function getConnectionPointConfig(type, batteryModel) {
       return { label: "eWay Lite", nodeRating: 250, terminalCount: 1 };
   }
 }
+// eBoost front stacking: H batteries per column (2 or 3). Column c holds
+// indices c*H .. c*H+H-1; row 0 is the top (front) battery.
+function getFrontStackHeight() {
+  try { return Math.max(2, Math.min(3, (state && state.frontStackHeight) | 0 || 2)); }
+  catch (e) { return 2; } // state not created yet (load-time self-checks)
+}
+function getFrontStackColumnMembers(columnIndex, batteryCount) {
+  const H = getFrontStackHeight();
+  const out = [];
+  for (let r = 0; r < H; r += 1) { const idx = columnIndex * H + r; if (idx < batteryCount) out.push(idx); }
+  return out;
+}
+function isFrontStackLastInColumn(index, batteryCount) {
+  const H = getFrontStackHeight();
+  return index % H === H - 1 || index === batteryCount - 1;
+}
 function isFrontStackBottomBattery(index, batteryLayoutMode) {
-  return batteryLayoutMode === "front_stacking" && index % 2 === 1;
+  // Any battery below the top (front) battery of its column.
+  return batteryLayoutMode === "front_stacking" && index % getFrontStackHeight() !== 0;
 }
 function getEffectiveBatteryConnectionType(index, configuredType, batteryLayoutMode) {
   // The configured type is always honoured. Front-stack bottom batteries are
@@ -616,14 +633,23 @@ function getEffectiveBatteryConnectionType(index, configuredType, batteryLayoutM
   return configuredType;
 }
 function getFrontStackColumnCount(batteryCount) {
-  return Math.max(1, Math.ceil(batteryCount / 2));
+  return Math.max(1, Math.ceil(batteryCount / getFrontStackHeight()));
 }
 function getTopBatteryIndexForColumn(columnIndex) {
-  return columnIndex * 2;
+  return columnIndex * getFrontStackHeight();
 }
 function getBottomBatteryIndexForColumn(columnIndex, batteryCount) {
-  const candidate = columnIndex * 2 + 1;
-  return candidate < batteryCount ? candidate : -1;
+  // Bottom-most battery of the column, or -1 if the column only has its top battery.
+  const members = getFrontStackColumnMembers(columnIndex, batteryCount);
+  return members.length > 1 ? members[members.length - 1] : -1;
+}
+function frontStackFlatLink(k) {
+  // Flat batteryLinks index k in front stacking: within a column it is the
+  // vertical link k <-> k+1; the last index of a column is the horizontal link
+  // between the top batteries of column c and column c+1.
+  const H = getFrontStackHeight();
+  const col = Math.floor(k / H), r = k % H;
+  return r < H - 1 ? [k, k + 1] : [col * H, (col + 1) * H];
 }
 function distributeStartAndEnd(total, parts, index) {
   const start = Math.floor((index * total) / parts);
@@ -660,13 +686,12 @@ function getBatteryEdges(batteryLinks, batteryLayoutMode, batteryCount, extraEdg
     seen.add(key); edges.push([lo, hi]);
   };
   if (batteryLayoutMode === "front_stacking") {
-    // Even flat index 2c -> vertical within column c (2c <-> 2c+1).
-    // Odd flat index 2c+1 -> horizontal between the front batteries of
-    // columns c and c+1 (2c <-> 2c+2).
+    // Vertical links within each column; the last link of a column joins the
+    // top batteries of neighbouring columns (see frontStackFlatLink).
     for (let k = 0; k < (batteryLinks || []).length; k += 1) {
       if (!batteryLinks[k]) continue;
-      if (k % 2 === 0) add(k, k + 1);
-      else add(k - 1, k + 1);
+      const ep = frontStackFlatLink(k);
+      add(ep[0], ep[1]);
     }
   } else {
     for (let k = 0; k < (batteryLinks || []).length; k += 1) {
@@ -686,7 +711,7 @@ function batteryEdgeDegree(index, edges) {
 function flatLinkEndpoints(k, batteryLayoutMode) {
   // The true physical battery endpoints controlled by flat batteryLinks index k.
   if (batteryLayoutMode === "front_stacking") {
-    return (k % 2 === 0) ? [k, k + 1] : [k - 1, k + 1];
+    return frontStackFlatLink(k);
   }
   return [k, k + 1];
 }
@@ -1195,6 +1220,7 @@ const state = {
   configurationMode: "none",
   busbarType: "none",     // eFlex Max only: "busbar" | "eflex_busbar" | "none"
   nanoGroupSizes: [],     // eSpire Nano only: batteries per inverter (0-3), index = inverter
+  frontStackHeight: 2,    // eBoost front stacking: batteries per stack (2 or 3)
   wizardActiveStep: "inverter",     // current step key in the guided wizard
   wizardCompletedSteps: [],          // array of step keys that have been confirmed
 };
@@ -1248,7 +1274,7 @@ function resizeSystem(newInv, newBat) {
   // from the battery above). Existing batteries keep whatever the user set.
   if (state.batteryModel !== "eforce" && state.batteryLayoutMode === "front_stacking") {
     for (let i = prevTypes.length; i < bat; i += 1) {
-      if (isFrontStackBottomBattery(i, "front_stacking")) nextTypes[i] = "single_point_terminal";
+      if (isFrontStackBottomBattery(i, "front_stacking")) nextTypes[i] = isFrontStackLastInColumn(i, bat) ? "single_point_terminal" : "three_point_terminal";
     }
   }
   const prevStacks = state.eforceStackSizes || [];
@@ -1570,7 +1596,9 @@ function upgradeBatteryConnectionTypes(connections, batteryLinks, baseTypes, bat
   const batteryCount = result.length;
   const edges = getBatteryEdges(batteryLinks, batteryLayoutMode, batteryCount, null);
   for (let i = 0; i < batteryCount; i += 1) {
-    if (isFrontStackBottomBattery(i, batteryLayoutMode)) continue;
+    // Bottom-most battery of a front stack stays at its eWay Lite default;
+    // a middle battery (3-high stacks) carries two links, so it is upgraded.
+    if (isFrontStackBottomBattery(i, batteryLayoutMode) && isFrontStackLastInColumn(i, batteryCount)) continue;
     const directLandings = connections.reduce((sum, row) => sum + ((row || [])[i] ? 1 : 0), 0);
     const totalLandings = directLandings + batteryEdgeDegree(i, edges);
     if (totalLandings > 3) result[i] = "six_point_busbar";
@@ -1688,15 +1716,13 @@ function applyDoNotShareConfiguration(layoutModeOverride) {
         const colEnd = Math.min(columnCount, colRange[1]);
         const groupBatteries = [];
         for (let c = colStart; c < colEnd; c += 1) {
-          groupBatteries.push(getTopBatteryIndexForColumn(c));
-          const bot = getBottomBatteryIndexForColumn(c, bat);
-          if (bot !== -1) groupBatteries.push(bot);
+          getFrontStackColumnMembers(c, bat).forEach((idx) => groupBatteries.push(idx));
         }
         groupBatteries.sort((a, b) => a - b);
         for (let k = 0; k < groupBatteries.length - 1; k += 1) {
           if (groupBatteries[k + 1] === groupBatteries[k] + 1) nextBatteryLinks[groupBatteries[k]] = true;
         }
-        const tops = groupBatteries.filter((idx) => idx % 2 === 0);
+        const tops = groupBatteries.filter((idx) => idx % getFrontStackHeight() === 0);
         const landingCount = Math.min(tops.length, maxPorts);
         const startOff = Math.floor((tops.length - landingCount) / 2);
         for (let k = 0; k < landingCount; k += 1) nextConnections[i][tops[startOff + k]] = true;
@@ -1709,9 +1735,8 @@ function applyDoNotShareConfiguration(layoutModeOverride) {
         nextConnections[i][getTopBatteryIndexForColumn(i % columnCount)] = true;
       }
       for (let c = 0; c < columnCount; c += 1) {
-        const top = getTopBatteryIndexForColumn(c);
-        const bot = getBottomBatteryIndexForColumn(c, bat);
-        if (bot !== -1) nextBatteryLinks[top] = true;
+        const members = getFrontStackColumnMembers(c, bat);
+        for (let k = 0; k < members.length - 1; k += 1) nextBatteryLinks[members[k]] = true;
       }
     }
   } else {
@@ -1920,6 +1945,17 @@ function setBusbarType(busbar) {
   scheduleRender();
 }
 
+function setFrontStackHeight(h) {
+  state.frontStackHeight = Math.max(2, Math.min(3, h | 0));
+  // Re-seed connection-point defaults for the new column shape: bottom-most
+  // battery = eWay Lite, middle (3-high) = eWay, top = eWay.
+  if (state.batteryLayoutMode === "front_stacking" && state.batteryModel === "eboost") {
+    state.batteryConnectionTypes = state.batteryConnectionTypes.map((t, i) =>
+      isFrontStackBottomBattery(i, "front_stacking") && isFrontStackLastInColumn(i, state.batteryCount) ? "single_point_terminal" : "three_point_terminal");
+  }
+  reapplyAutoConfigIfNeeded();
+  scheduleRender();
+}
 function setBatteryLayoutMode(mode) {
   // eForce and eFlex Max only support side-by-side; ignore front-stacking attempts.
   if ((state.batteryModel === "eforce" || state.batteryModel === "eflex_max") && mode === "front_stacking") return;
@@ -2064,10 +2100,11 @@ function buildSvg(state, results) {
   const inverterCount = state.inverterCount;
   const batteryCount = state.batteryCount;
   const isFrontStacking = state.batteryLayoutMode === "front_stacking";
-  const stackingColumns = isFrontStacking ? Math.ceil(batteryCount / 2) : batteryCount;
+  const fsH = getFrontStackHeight();
+  const stackingColumns = isFrontStacking ? Math.ceil(batteryCount / fsH) : batteryCount;
   const diagramWidth = Math.max(860, Math.max(inverterCount, stackingColumns) * 170 + 240);
   const isEforceLayout = state.batteryModel === "eforce";
-  const diagramHeight = isFrontStacking ? 610 : 470;
+  const diagramHeight = isFrontStacking ? 610 + (fsH - 2) * 180 : 470;
   const inverterY = 90;
   const batteryTopY = isFrontStacking ? 250 : diagramHeight - 170;
   const batteryBottomY = isFrontStacking ? 430 : batteryTopY;
@@ -2081,13 +2118,13 @@ function buildSvg(state, results) {
         y: batteryTopY,
       };
     }
-    const columnIndex = Math.floor(i / 2);
-    const rowIndex = i % 2;
-    const columnCount = Math.max(1, Math.ceil(batteryCount / 2));
+    const columnIndex = Math.floor(i / fsH);
+    const rowIndex = i % fsH;
+    const columnCount = Math.max(1, Math.ceil(batteryCount / fsH));
     return {
       name,
       x: columnCount === 1 ? diagramWidth / 2 - 64 : 120 + columnIndex * ((diagramWidth - 240) / Math.max(1, columnCount - 1)) - 64,
-      y: rowIndex === 0 ? batteryTopY : batteryBottomY,
+      y: batteryTopY + rowIndex * (batteryBottomY - batteryTopY),
     };
   });
 
@@ -2327,23 +2364,23 @@ function buildSvg(state, results) {
       svg += drawRackCableDiagonal(from.x + 28, from.y + 90, to.x + 100, to.y + 18);
       labelCommDiagonal(from.x + 28, from.y + 90, to.x + 100, to.y + 18);
     }
-    // Vertical comm lines: within each column, top battery -> bottom battery (closes the daisy chain)
+    // Vertical comm lines: within each column, each battery -> the one below it (closes the daisy chain)
     for (let column = 0; column < frontStackColumnCount; column += 1) {
-      const topIndex = getTopBatteryIndexForColumn(column);
-      const bottomIndex = getBottomBatteryIndexForColumn(column, batteryCount);
-      if (bottomIndex === -1) continue;
-      const top = batteryPositions[topIndex];
-      const bottom = batteryPositions[bottomIndex];
+      const members = getFrontStackColumnMembers(column, batteryCount);
+      for (let m = 0; m < members.length - 1; m += 1) {
+      const top = batteryPositions[members[m]];
+      const bottom = batteryPositions[members[m + 1]];
       svg += '<line x1="' + (top.x + 94) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 94) + '" y2="' + (bottom.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
       svg += drawRackCable(top.x + 94, top.y + 102, bottom.x + 94, bottom.y - 6, 6, 0, top.x + 104, (top.y + 102 + bottom.y) / 2 - 2, 'start');
       labelCommCable(top.x + 104, (top.y + 102 + bottom.y) / 2 + (rackCableLines ? 20 : -2), 'start');
+      }
     }
   }
 
   // Front-stack do-not-share comm
   if (isFrontStackDoNotShare) {
     results.batteryGroups.forEach((group, groupIndex) => {
-      const topIndices = group.filter((batteryIndex) => batteryIndex % 2 === 0);
+      const topIndices = group.filter((batteryIndex) => batteryIndex % fsH === 0);
       const touchedInverter = results.inverterNames.findIndex((_, inv) =>
         group.some((batteryIndex) => ((results.directFlows[inv] || [])[batteryIndex] || 0) > 0)
       );
@@ -2354,10 +2391,11 @@ function buildSvg(state, results) {
         // topIndices[0] is the primary of the do-not-share group → green dashed.
         svg += '<line x1="' + (from.x + 70) + '" y1="' + (from.y + 62) + '" x2="' + (to.x + 90) + '" y2="' + (to.y - 6) + '" stroke="' + commColorFor(primaryBatteryIndex) + '" stroke-width="1.5" stroke-dasharray="6 5"/>';
       }
-      topIndices.forEach((topIndex) => {
-        const bottomIndex = topIndex + 1;
-        if (group.indexOf(bottomIndex) === -1) return;
-        const top = batteryPositions[topIndex];
+      group.forEach((upperIndex) => {
+        // Vertical comm within a column: each battery -> the one directly below it.
+        const bottomIndex = upperIndex + 1;
+        if (bottomIndex % fsH === 0 || group.indexOf(bottomIndex) === -1) return;
+        const top = batteryPositions[upperIndex];
         const bottom = batteryPositions[bottomIndex];
         svg += '<line x1="' + (top.x + 94) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 94) + '" y2="' + (bottom.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
         svg += drawRackCable(top.x + 94, top.y + 102, bottom.x + 94, bottom.y - 6, 6, 0, top.x + 104, (top.y + 102 + bottom.y) / 2 - 2, 'start');
@@ -2666,14 +2704,23 @@ function buildSetupPanel(state, results) {
     } else if (step.key === 'layout') {
       // eBoost only
       if (status === 'completed') {
-        html += '<div class="wizardStepSummary">' + (state.batteryLayoutMode === 'side_by_side' ? 'Side by side' : 'Front stacking') + '</div>';
+        html += '<div class="wizardStepSummary">' + (state.batteryLayoutMode === 'side_by_side' ? 'Side by side' : 'Front stacking \u00b7 ' + getFrontStackHeight() + ' per stack') + '</div>';
       } else {
         html += '<div class="wizardStepBody">';
         html += '<div class="configButtonRow">';
         html += '<button class="btn' + (state.batteryLayoutMode === 'side_by_side' ? ' active' : '') + '" data-action="layoutSide">Side by side</button>';
         html += '<button class="btn' + (state.batteryLayoutMode === 'front_stacking' ? ' active' : '') + '" data-action="layoutFront">Front stacking</button>';
         html += '</div>';
-        html += '<div class="helper">Layout changes only the drawing. In front stacking, the lower battery in each stack is treated as eWay Lite and is fed from the eWay battery above it.</div>';
+        if (state.batteryLayoutMode === 'front_stacking') {
+          const H = getFrontStackHeight();
+          html += '<label class="subFieldLabel" style="margin-top:10px">Batteries per stack</label>';
+          html += '<div class="configButtonRow">';
+          [2, 3].forEach((n) => {
+            html += '<button class="btn' + (H === n ? ' active' : '') + '" data-action="fsHeight" data-n="' + n + '">' + n + ' high</button>';
+          });
+          html += '</div>';
+        }
+        html += '<div class="helper">Layout changes only the drawing. In front stacking, the bottom battery in each stack is treated as eWay Lite and is fed from the battery above it. In a 3-high stack the middle battery uses an eWay, since it carries the links above and below it. Only eBoost can be front stacked (up to 3 high).</div>';
         html += '<div class="wizardContinueRow"><button class="wizardContinue" data-action="continueWizard" data-step="layout">Continue \u2192</button></div>';
         html += '</div>';
       }
@@ -2826,7 +2873,7 @@ function buildSetupPanel(state, results) {
   results.batteryNames.forEach((name, i) => {
     const appliedType = isEforce ? EFORCE_FIXED_TYPE : getEffectiveBatteryConnectionType(i, state.batteryConnectionTypes[i] || 'three_point_terminal', state.batteryLayoutMode);
     const config = getConnectionPointConfig(appliedType, state.batteryModel);
-    const lockedFrontStackLite = !isEforce && isFrontStackBottomBattery(i, state.batteryLayoutMode);
+    const lockedFrontStackLite = !isEforce && isFrontStackBottomBattery(i, state.batteryLayoutMode) && isFrontStackLastInColumn(i, state.batteryCount);
     const lockedEforce = isEforce || isNanoBat;
     html += '<div class="bpRow">';
     html += '<div>';
@@ -3197,6 +3244,7 @@ document.addEventListener('click', (e) => {
     case 'applyBatterySuggestion': { const newTotal = parseInt(el.getAttribute('data-total'), 10); if (newTotal > 0) applyBatterySuggestion(newTotal); break; }
     case 'layoutSide': setBatteryLayoutMode('side_by_side'); break;
     case 'layoutFront': setBatteryLayoutMode('front_stacking'); break;
+    case 'fsHeight': setFrontStackHeight(parseInt(el.getAttribute('data-n'), 10)); break;
     case 'setBatteryEboost': setBatteryModel('eboost'); break;
     case 'setBatteryEforce': setBatteryModel('eforce'); break;
     case 'setBatteryEflexMax': setBatteryModel('eflex_max'); break;
