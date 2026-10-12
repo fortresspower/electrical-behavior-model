@@ -2051,6 +2051,15 @@ function badge(type, content) {
   return '<span class="' + cls + '">' + content + '</span>';
 }
 
+// Schematic-style power cable: a red (+) and black (-) conductor side by side.
+// Red always sits on the upper/left side of the run.
+function powerPair(x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+  let px = -dy / len * 2.5, py = dx / len * 2.5;
+  if (py > 0 || (py === 0 && px > 0)) { px = -px; py = -py; }
+  return '<line x1="' + (x1 + px) + '" y1="' + (y1 + py) + '" x2="' + (x2 + px) + '" y2="' + (y2 + py) + '" stroke="#dc2626" stroke-width="2"/>' +
+    '<line x1="' + (x1 - px) + '" y1="' + (y1 - py) + '" x2="' + (x2 - px) + '" y2="' + (y2 - py) + '" stroke="#111827" stroke-width="2"/>';
+}
 function buildSvg(state, results) {
   const inverterCount = state.inverterCount;
   const batteryCount = state.batteryCount;
@@ -2167,7 +2176,7 @@ function buildSvg(state, results) {
         if (invTotal <= 0) return;
         const from = inverterPositions[i];
         const dropX = from.x + 45;
-        svg += '<line x1="' + dropX + '" y1="' + (from.y + 56) + '" x2="' + dropX + '" y2="' + busbarY + '" stroke="#000" stroke-width="2.5"/>';
+        svg += powerPair(dropX, (from.y + 56), dropX, busbarY);
         svg += '<text x="' + (dropX + 6) + '" y="' + ((from.y + 56 + busbarY) / 2 + 4) + '" style="fill:#64748b;font-size:11px">' + formatAmps(invTotal) + 'A</text>';
       });
       // Busbar -> battery drops for this group.
@@ -2177,7 +2186,7 @@ function buildSvg(state, results) {
         if (!battery || battery.inactive) return;
         const dropX = to.x + 64;
         const load = battery.finalLoad || 0;
-        svg += '<line x1="' + dropX + '" y1="' + (busbarY + busbarH) + '" x2="' + dropX + '" y2="' + to.y + '" stroke="#000" stroke-width="2.5"/>';
+        svg += powerPair(dropX, (busbarY + busbarH), dropX, to.y);
         if (load > 0) svg += '<text x="' + (dropX + 6) + '" y="' + ((busbarY + busbarH + to.y) / 2 + 4) + '" style="fill:#64748b;font-size:11px">' + formatAmps(load) + 'A</text>';
       });
     });
@@ -2216,7 +2225,7 @@ function buildSvg(state, results) {
         if (invTotal <= 0) return;
         const from = inverterPositions[i];
         const dropX = from.x + 45;
-        svg += '<line x1="' + dropX + '" y1="' + (from.y + 56) + '" x2="' + dropX + '" y2="' + bandY + '" stroke="#000" stroke-width="2.5"/>';
+        svg += powerPair(dropX, (from.y + 56), dropX, bandY);
         svg += '<text x="' + (dropX + 6) + '" y="' + ((from.y + 56 + bandY) / 2 + 4) + '" style="fill:#64748b;font-size:11px">' + formatAmps(invTotal) + 'A</text>';
       });
       // Battery columns sit directly under the band — no per-battery drop line needed.
@@ -2232,26 +2241,27 @@ function buildSvg(state, results) {
         if ((results.dualPortLandings || [])[i] === j) {
           // Nano 60kW + single 60kWh: two cables, one per port, into the battery busbar.
           [-14, 14].forEach((dx) => {
-            svg += '<line x1="' + (from.x + 45 + dx) + '" y1="' + (from.y + 56) + '" x2="' + (to.x + 64 + dx) + '" y2="' + to.y + '" stroke="#000" stroke-width="2.5"/>';
+            svg += powerPair((from.x + 45 + dx), (from.y + 56), (to.x + 64 + dx), to.y);
             svg += '<text x="' + ((from.x + to.x) / 2 + 45 + dx * 3.6) + '" y="' + ((from.y + 56 + to.y) / 2 + 4) + '" text-anchor="middle" style="fill:#64748b;font-size:11px">' + formatAmps(current / 2) + 'A</text>';
           });
           return;
         }
-        svg += '<line x1="' + (from.x + 45) + '" y1="' + (from.y + 56) + '" x2="' + (to.x + 64) + '" y2="' + to.y + '" stroke="#000" stroke-width="2.5"/>';
+        svg += powerPair((from.x + 45), (from.y + 56), (to.x + 64), to.y);
         svg += '<text x="' + ((from.x + to.x) / 2 + 10) + '" y="' + ((from.y + to.y) / 2 + 6) + '" text-anchor="middle" style="fill:#64748b;font-size:11px">' + formatAmps(current) + 'A</text>';
       });
     });
   }
 
   // Battery-to-battery cable that runs alongside each comm cable (eBoost / eForce only).
-  const rackCableLines = state.batteryModel === 'eforce' ? ['Rack 1 to', 'Rack 2 Cable']
+  const rackCableLines = state.batteryModel === 'eforce' ? ['Rack1-Rack2']
     : (state.batteryModel === 'eboost' ? ['J9-J8', 'cable'] : null);
   const RACK_CABLE_COLOR = '#7c3aed';
   let rackCableLabels = ''; // drawn last so battery boxes never cover them
   const drawRackCable = (x1, y1, x2, y2, ox, oy, lx, ly, anchor) => {
     if (!rackCableLines) return '';
-    rackCableLabels += '<text x="' + lx + '" y="' + ly + '" text-anchor="' + anchor + '" style="fill:' + RACK_CABLE_COLOR + ';font-size:9px;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:3px">' + escapeHtml(rackCableLines[0]) + '</text>';
-    rackCableLabels += '<text x="' + lx + '" y="' + (ly + 10) + '" text-anchor="' + anchor + '" style="fill:' + RACK_CABLE_COLOR + ';font-size:9px;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:3px">' + escapeHtml(rackCableLines[1]) + '</text>';
+    rackCableLines.forEach((line, k) => {
+      rackCableLabels += '<text x="' + lx + '" y="' + (ly + (rackCableLines.length === 1 ? 6 : 0) + k * 10) + '" text-anchor="' + anchor + '" style="fill:' + RACK_CABLE_COLOR + ';font-size:9px;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:3px">' + escapeHtml(line) + '</text>';
+    });
     return '<line x1="' + (x1 + ox) + '" y1="' + (y1 + oy) + '" x2="' + (x2 + ox) + '" y2="' + (y2 + oy) + '" stroke="' + RACK_CABLE_COLOR + '" stroke-width="1.5"/>';
   };
   const drawRackCableDiagonal = (x1, y1, x2, y2) => {
@@ -2359,7 +2369,7 @@ function buildSvg(state, results) {
       const current = Math.abs((results.edgeCurrents || [])[k] || 0);
       const ax = a.x + 64, ay = a.y + 50;
       const bx = b.x + 64, by = b.y + 50;
-      svg += '<line x1="' + ax + '" y1="' + ay + '" x2="' + bx + '" y2="' + by + '" stroke="#000" stroke-width="3"/>';
+      svg += powerPair(ax, ay, bx, by);
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
       svg += '<text x="' + mx + '" y="' + (my - 6) + '" text-anchor="middle" style="fill:#64748b;font-size:11px;paint-order:stroke;stroke:#fff;stroke-width:3px">' + formatAmps(current) + 'A</text>';
     });
@@ -2478,7 +2488,7 @@ function buildSvg(state, results) {
     ? '<div class="legendItem"><div style="width:28px;height:0;border-top:2px solid ' + RACK_CABLE_COLOR + '"></div><span>' + escapeHtml(rackCableLines.join(' ')) + '</span></div>'
     : '';
   const legend = '<div class="legend">' +
-    '<div class="legendItem"><div class="swatchBlack"></div><span>Power cable</span></div>' +
+    '<div class="legendItem"><div style="width:28px;height:3px;border-top:2px solid #dc2626;border-bottom:2px solid #111827"></div><span>Power cable (red +, black \u2212)</span></div>' +
     '<div class="legendItem"><div class="swatchBlue"></div><span>Battery to battery communication</span></div>' +
     '<div class="legendItem"><div class="swatchGreen"></div><span>Primary battery to inverter communication</span></div>' +
     '<div class="legendItem"><div class="swatchMustard"></div><span>Inverter-to-inverter communication</span></div>' +
