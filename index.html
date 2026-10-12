@@ -2243,6 +2243,23 @@ function buildSvg(state, results) {
     });
   }
 
+  // Battery-to-battery cable that runs alongside each comm cable (eBoost / eForce only).
+  const rackCableLines = state.batteryModel === 'eforce' ? ['Rack 1 to', 'Rack 2 Cable']
+    : (state.batteryModel === 'eboost' ? ['J9-J8', 'cable'] : null);
+  const RACK_CABLE_COLOR = '#7c3aed';
+  let rackCableLabels = ''; // drawn last so battery boxes never cover them
+  const drawRackCable = (x1, y1, x2, y2, ox, oy, lx, ly, anchor) => {
+    if (!rackCableLines) return '';
+    rackCableLabels += '<text x="' + lx + '" y="' + ly + '" text-anchor="' + anchor + '" style="fill:' + RACK_CABLE_COLOR + ';font-size:9px;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:3px">' + escapeHtml(rackCableLines[0]) + '</text>';
+    rackCableLabels += '<text x="' + lx + '" y="' + (ly + 10) + '" text-anchor="' + anchor + '" style="fill:' + RACK_CABLE_COLOR + ';font-size:9px;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:3px">' + escapeHtml(rackCableLines[1]) + '</text>';
+    return '<line x1="' + (x1 + ox) + '" y1="' + (y1 + oy) + '" x2="' + (x2 + ox) + '" y2="' + (y2 + oy) + '" stroke="' + RACK_CABLE_COLOR + '" stroke-width="1.5"/>';
+  };
+  const drawRackCableDiagonal = (x1, y1, x2, y2) => {
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const px = -dy / len, py = dx / len; // unit perpendicular
+    return drawRackCable(x1, y1, x2, y2, px * 6, py * 6, (x1 + x2) / 2 + px * 18, (y1 + y2) / 2 + py * 18, 'middle');
+  };
+
   // Communication: standard (non-front-stack)
   if (!isFrontStackShared && !isFrontStackDoNotShare) {
     results.autoCommConnections.forEach((row, i) => {
@@ -2259,6 +2276,7 @@ function buildSvg(state, results) {
       const a = batteryPositions[i];
       const b = batteryPositions[i + 1];
       svg += '<line x1="' + (a.x + 90) + '" y1="' + (a.y + 90) + '" x2="' + (b.x + 90) + '" y2="' + (a.y + 90) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+      svg += drawRackCable(a.x + 90, a.y + 90, b.x + 90, a.y + 90, 0, 6, (a.x + 128 + b.x) / 2, a.y + 72, 'middle');
     });
   }
 
@@ -2280,6 +2298,7 @@ function buildSvg(state, results) {
       const from = batteryPositions[fromTopIndex];
       const to = batteryPositions[toBottomIndex];
       svg += '<line x1="' + (from.x + 28) + '" y1="' + (from.y + 90) + '" x2="' + (to.x + 100) + '" y2="' + (to.y + 18) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+      svg += drawRackCableDiagonal(from.x + 28, from.y + 90, to.x + 100, to.y + 18);
     }
     // Vertical comm lines: within each column, top battery -> bottom battery (closes the daisy chain)
     for (let column = 0; column < frontStackColumnCount; column += 1) {
@@ -2289,6 +2308,7 @@ function buildSvg(state, results) {
       const top = batteryPositions[topIndex];
       const bottom = batteryPositions[bottomIndex];
       svg += '<line x1="' + (top.x + 94) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 94) + '" y2="' + (bottom.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+      svg += drawRackCable(top.x + 94, top.y + 102, bottom.x + 94, bottom.y - 6, 6, 0, top.x + 104, (top.y + 102 + bottom.y) / 2 - 2, 'start');
     }
   }
 
@@ -2312,6 +2332,7 @@ function buildSvg(state, results) {
         const top = batteryPositions[topIndex];
         const bottom = batteryPositions[bottomIndex];
         svg += '<line x1="' + (top.x + 94) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 94) + '" y2="' + (bottom.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+        svg += drawRackCable(top.x + 94, top.y + 102, bottom.x + 94, bottom.y - 6, 6, 0, top.x + 104, (top.y + 102 + bottom.y) / 2 - 2, 'start');
       });
       topIndices.slice(1).forEach((topIndex) => {
         const previousBottomIndex = topIndex - 1;
@@ -2319,6 +2340,7 @@ function buildSvg(state, results) {
         const from = batteryPositions[topIndex];
         const to = batteryPositions[previousBottomIndex];
         svg += '<line x1="' + (from.x + 28) + '" y1="' + (from.y + 90) + '" x2="' + (to.x + 100) + '" y2="' + (to.y + 18) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
+        svg += drawRackCableDiagonal(from.x + 28, from.y + 90, to.x + 100, to.y + 18);
       });
     });
   }
@@ -2449,13 +2471,18 @@ function buildSvg(state, results) {
     svg += '</g>';
   });
 
+  svg += rackCableLabels;
   svg += '</svg>';
 
+  const rackLegend = (rackCableLines && rackCableLabels)
+    ? '<div class="legendItem"><div style="width:28px;height:0;border-top:2px solid ' + RACK_CABLE_COLOR + '"></div><span>' + escapeHtml(rackCableLines.join(' ')) + '</span></div>'
+    : '';
   const legend = '<div class="legend">' +
     '<div class="legendItem"><div class="swatchBlack"></div><span>Power cable</span></div>' +
     '<div class="legendItem"><div class="swatchBlue"></div><span>Battery to battery communication</span></div>' +
     '<div class="legendItem"><div class="swatchGreen"></div><span>Primary battery to inverter communication</span></div>' +
     '<div class="legendItem"><div class="swatchMustard"></div><span>Inverter-to-inverter communication</span></div>' +
+    rackLegend +
     '</div>';
   return svg + legend;
 }
