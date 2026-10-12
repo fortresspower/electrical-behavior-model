@@ -2297,7 +2297,7 @@ function buildSvg(state, results) {
   const drawRackCable = (x1, y1, x2, y2, ox, oy, lx, ly, anchor) => {
     if (!rackCableLines) return '';
     rackCableLines.forEach((line, k) => {
-      rackCableLabels += '<text x="' + lx + '" y="' + (ly + (rackCableLines.length === 1 ? 6 : 0) + k * 10) + '" text-anchor="' + anchor + '" style="fill:' + RACK_CABLE_COLOR + ';font-size:9px;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:3px">' + escapeHtml(line) + '</text>';
+      rackCableLabels += '<text x="' + lx + '" y="' + (ly + k * 10) + '" text-anchor="' + anchor + '" style="fill:' + RACK_CABLE_COLOR + ';font-size:9px;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:3px">' + escapeHtml(line) + '</text>';
     });
     return '<line x1="' + (x1 + ox) + '" y1="' + (y1 + oy) + '" x2="' + (x2 + ox) + '" y2="' + (y2 + oy) + '" stroke="' + RACK_CABLE_COLOR + '" stroke-width="1.5"/>';
   };
@@ -2338,8 +2338,10 @@ function buildSvg(state, results) {
       const a = batteryPositions[i];
       const b = batteryPositions[i + 1];
       svg += '<line x1="' + (a.x + 90) + '" y1="' + (a.y + 90) + '" x2="' + (b.x + 90) + '" y2="' + (a.y + 90) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
-      svg += drawRackCable(a.x + 90, a.y + 90, b.x + 90, a.y + 90, 0, 6, (a.x + 128 + b.x) / 2, a.y + 72, 'middle');
-      labelCommCable((a.x + 128 + b.x) / 2, rackCableLines ? a.y + 110 : a.y + 74, 'middle');
+      // Blue comm label sits ABOVE the blue dashed line (y+90); the purple
+      // cable (y+96) carries its own label BELOW it.
+      svg += drawRackCable(a.x + 90, a.y + 90, b.x + 90, a.y + 90, 0, 6, (a.x + 128 + b.x) / 2, a.y + 109, 'middle');
+      labelCommCable((a.x + 128 + b.x) / 2, a.y + 75, 'middle');
     });
   }
 
