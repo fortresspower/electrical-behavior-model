@@ -2487,9 +2487,12 @@ function buildSvg(state, results) {
   const rackLegend = (rackCableLines && rackCableLabels)
     ? '<div class="legendItem"><div style="width:28px;height:0;border-top:2px solid ' + RACK_CABLE_COLOR + '"></div><span>' + escapeHtml(rackCableLines.join(' ')) + '</span></div>'
     : '';
+  // Name of the dashed battery-to-battery communication cable, per battery model.
+  const batteryCommLegendLabel = (state.batteryModel === 'eboost' || state.batteryModel === 'eforce') ? 'Rack1 to Rack2 RJ45'
+    : (state.batteryModel === 'eflex_max' ? 'Uplink-Downlink' : 'Battery to battery communication');
   const legend = '<div class="legend">' +
     '<div class="legendItem"><div style="width:28px;height:3px;border-top:2px solid #dc2626;border-bottom:2px solid #111827"></div><span>Power cable (red +, black \u2212)</span></div>' +
-    '<div class="legendItem"><div class="swatchBlue"></div><span>Battery to battery communication</span></div>' +
+    '<div class="legendItem"><div class="swatchBlue"></div><span>' + escapeHtml(batteryCommLegendLabel) + '</span></div>' +
     '<div class="legendItem"><div class="swatchGreen"></div><span>Primary battery to inverter communication</span></div>' +
     '<div class="legendItem"><div class="swatchMustard"></div><span>Inverter-to-inverter communication</span></div>' +
     rackLegend +
