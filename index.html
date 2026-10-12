@@ -2291,7 +2291,7 @@ function buildSvg(state, results) {
 
   // Battery-to-battery cable that runs alongside each comm cable (eBoost / eForce only).
   const rackCableLines = state.batteryModel === 'eforce' ? ['Rack1-Rack2']
-    : (state.batteryModel === 'eboost' ? ['J9-J8', 'cable'] : null);
+    : (state.batteryModel === 'eboost' ? ['J9-J8'] : null);
   const RACK_CABLE_COLOR = '#7c3aed';
   let rackCableLabels = ''; // drawn last so battery boxes never cover them
   const drawRackCable = (x1, y1, x2, y2, ox, oy, lx, ly, anchor) => {
@@ -2302,8 +2302,8 @@ function buildSvg(state, results) {
     return '<line x1="' + (x1 + ox) + '" y1="' + (y1 + oy) + '" x2="' + (x2 + ox) + '" y2="' + (y2 + oy) + '" stroke="' + RACK_CABLE_COLOR + '" stroke-width="1.5"/>';
   };
   // Name printed on the dashed battery-to-battery communication cable.
-  const commCableLines = (state.batteryModel === 'eboost' || state.batteryModel === 'eforce') ? ['Rack1 to', 'Rack2 RJ45']
-    : (state.batteryModel === 'eflex_max' ? ['Downlink-', 'Uplink'] : null);
+  const commCableLines = (state.batteryModel === 'eboost' || state.batteryModel === 'eforce') ? ['Rack1-Rack2']
+    : (state.batteryModel === 'eflex_max' ? ['Downlink-Uplink'] : null);
   const COMM_LABEL_COLOR = '#2563eb';
   const labelCommCable = (lx, ly, anchor) => {
     if (!commCableLines) return;
@@ -2340,8 +2340,8 @@ function buildSvg(state, results) {
       svg += '<line x1="' + (a.x + 90) + '" y1="' + (a.y + 90) + '" x2="' + (b.x + 90) + '" y2="' + (a.y + 90) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
       // Blue comm label sits ABOVE the blue dashed line (y+90); the purple
       // cable (y+96) carries its own label BELOW it.
-      svg += drawRackCable(a.x + 90, a.y + 90, b.x + 90, a.y + 90, 0, 6, (a.x + 128 + b.x) / 2, a.y + 109, 'middle');
-      labelCommCable((a.x + 128 + b.x) / 2, a.y + 75, 'middle');
+      svg += drawRackCable(a.x + 90, a.y + 90, b.x + 90, a.y + 90, 0, 6, (a.x + 128 + b.x) / 2, a.y + 107, 'middle');
+      labelCommCable((a.x + 128 + b.x) / 2, a.y + 85, 'middle');
     });
   }
 
@@ -2374,7 +2374,7 @@ function buildSvg(state, results) {
       const bottom = batteryPositions[members[m + 1]];
       svg += '<line x1="' + (top.x + 94) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 94) + '" y2="' + (bottom.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
       svg += drawRackCable(top.x + 94, top.y + 102, bottom.x + 94, bottom.y - 6, 6, 0, top.x + 104, (top.y + 102 + bottom.y) / 2 - 2, 'start');
-      labelCommCable(top.x + 104, (top.y + 102 + bottom.y) / 2 + (rackCableLines ? 20 : -2), 'start');
+      labelCommCable(top.x + 104, (top.y + 102 + bottom.y) / 2 + (rackCableLines ? 12 : -2), 'start');
       }
     }
   }
@@ -2401,7 +2401,7 @@ function buildSvg(state, results) {
         const bottom = batteryPositions[bottomIndex];
         svg += '<line x1="' + (top.x + 94) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 94) + '" y2="' + (bottom.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
         svg += drawRackCable(top.x + 94, top.y + 102, bottom.x + 94, bottom.y - 6, 6, 0, top.x + 104, (top.y + 102 + bottom.y) / 2 - 2, 'start');
-        labelCommCable(top.x + 104, (top.y + 102 + bottom.y) / 2 + (rackCableLines ? 20 : -2), 'start');
+        labelCommCable(top.x + 104, (top.y + 102 + bottom.y) / 2 + (rackCableLines ? 12 : -2), 'start');
       });
       topIndices.slice(1).forEach((topIndex) => {
         const previousBottomIndex = topIndex - 1;
@@ -2545,11 +2545,13 @@ function buildSvg(state, results) {
   svg += '</svg>';
 
   const rackLegend = (rackCableLines && rackCableLabels)
-    ? '<div class="legendItem"><div style="width:28px;height:0;border-top:2px solid ' + RACK_CABLE_COLOR + '"></div><span>' + escapeHtml(rackCableLines.join(' ')) + '</span></div>'
+    ? '<div class="legendItem"><div style="width:28px;height:0;border-top:2px solid ' + RACK_CABLE_COLOR + '"></div><span>' + escapeHtml(state.batteryModel === 'eforce'
+        ? 'Rack1-Rack2: rack-to-rack cable, left rack to right rack, run alongside the RJ45'
+        : 'J9-J8: cable from J9 on the left battery to J8 on the right battery, run alongside the RJ45') + '</span></div>'
     : '';
   // Name of the dashed battery-to-battery communication cable, per battery model.
-  const batteryCommLegendLabel = (state.batteryModel === 'eboost' || state.batteryModel === 'eforce') ? 'Rack1 to Rack2 RJ45'
-    : (state.batteryModel === 'eflex_max' ? 'Downlink-Uplink' : 'Battery to battery communication');
+  const batteryCommLegendLabel = (state.batteryModel === 'eboost' || state.batteryModel === 'eforce') ? 'Rack1-Rack2: RJ45 battery-to-battery communication cable'
+    : (state.batteryModel === 'eflex_max' ? 'Downlink-Uplink: battery-to-battery communication cable' : 'Battery to battery communication');
   const legend = '<div class="legend">' +
     '<div class="legendItem"><div style="width:28px;height:3px;border-top:2px solid #dc2626;border-bottom:2px solid #111827"></div><span>Power cable (red +, black \u2212)</span></div>' +
     '<div class="legendItem"><div class="swatchBlue"></div><span>' + escapeHtml(batteryCommLegendLabel) + '</span></div>' +
