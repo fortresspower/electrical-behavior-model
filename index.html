@@ -644,7 +644,7 @@ const EFORCE_TERMINAL_COUNT = 4;
 const EFORCE_FIXED_TYPE = "eforce_four_point";
 // eSpire Nano (HV) family. Nano inverters pair only with Nano batteries.
 const NANO_MAX_INVERTER_COUNT = 6;
-const NANO_MAX_BATTERIES_PER_INVERTER = 3;
+const NANO_MAX_BATTERIES_PER_INVERTER = 5;
 const NANO_BATTERY_CURRENT = 100;      // per-battery max discharge (A)
 const NANO_PORT_CURRENT = 84;          // per battery port (A); two independent ports
 const NANO_TERMINAL_COUNT = 6;         // 6-terminal busbar, no eWay
@@ -672,6 +672,20 @@ function getBatteryModelLabel(m) {
   return "eBoost";
 }
 
+// Do not share: each inverter's cluster is independent (separate power and
+// communication), so the model limit applies per cluster. The system limit is
+// the model limit x the number of clusters (one per inverter). Solo inverters
+// can't run Do not share, so they keep the single-cluster limit.
+function getClusterCountForLimits(inverterCount) {
+  try {
+    if (isNanoInverterModel(state.inverterModel) || state.inverterModel === 'solo_6_5kw') return 1;
+    return Math.max(1, (inverterCount !== undefined ? inverterCount : state.inverterCount) | 0);
+  } catch (e) { return 1; }
+}
+function getMaxBatteryCountForSystem(batteryModel, inverterCount) {
+  if (isNanoBatteryModel(batteryModel)) return getMaxBatteryCountForModel(batteryModel);
+  return getMaxBatteryCountForModel(batteryModel) * getClusterCountForLimits(inverterCount);
+}
 function getMaxBatteryCountForModel(batteryModel) {
   if (batteryModel === "eforce") return EFORCE_MAX_BATTERY_COUNT;
   if (batteryModel === "eflex_max") return EFLEX_MAX_MAX_BATTERY_COUNT;
@@ -755,25 +769,67 @@ function getConnectionPointConfig(type, batteryModel) {
       return { label: "eWay Lite", nodeRating: 250, terminalCount: 1 };
   }
 }
-// eBoost front stacking: H batteries per column (2 or 3). Column c holds
-// indices c*H .. c*H+H-1; row 0 is the top (front) battery.
+// eBoost front stacking: batteries are grouped into columns of 1-3, numbered
+// column by column (B1..Bn). Row 0 of each column is the top (front) battery.
+// state.eboostColumnSizes holds a custom arrangement; when it is empty or no
+// longer matches the battery count, columns are uniform at frontStackHeight.
 function getFrontStackHeight() {
   try { return Math.max(2, Math.min(3, (state && state.frontStackHeight) | 0 || 2)); }
   catch (e) { return 2; } // state not created yet (load-time self-checks)
 }
-function getFrontStackColumnMembers(columnIndex, batteryCount) {
-  const H = getFrontStackHeight();
+function uniformFrontStackColumns(batteryCount, height) {
   const out = [];
-  for (let r = 0; r < H; r += 1) { const idx = columnIndex * H + r; if (idx < batteryCount) out.push(idx); }
+  let left = Math.max(0, batteryCount | 0);
+  while (left > 0) { const take = Math.min(height, left); out.push(take); left -= take; }
   return out;
 }
-function isFrontStackLastInColumn(index, batteryCount) {
-  const H = getFrontStackHeight();
-  return index % H === H - 1 || index === batteryCount - 1;
+function currentBatteryCountOr(batteryCount) {
+  if (batteryCount !== undefined && batteryCount !== null) return batteryCount;
+  try { return state.batteryCount; } catch (e) { return 0; }
 }
-function isFrontStackBottomBattery(index, batteryLayoutMode) {
+function getFrontStackColumnSizes(batteryCount) {
+  const n = currentBatteryCountOr(batteryCount);
+  let custom = null;
+  try { custom = state.eboostColumnSizes; } catch (e) { custom = null; }
+  if (Array.isArray(custom) && custom.length > 0 && custom.every((c) => c >= 1 && c <= 3) &&
+      custom.reduce((a, b) => a + b, 0) === n) return custom;
+  return uniformFrontStackColumns(n, getFrontStackHeight());
+}
+function getFrontStackColumnStarts(batteryCount) {
+  const sizes = getFrontStackColumnSizes(batteryCount);
+  const starts = [];
+  let acc = 0;
+  sizes.forEach((c) => { starts.push(acc); acc += c; });
+  return starts;
+}
+function getFrontStackPosition(index, batteryCount) {
+  // { column, row } of a battery in front stacking.
+  const sizes = getFrontStackColumnSizes(batteryCount);
+  let acc = 0;
+  for (let c = 0; c < sizes.length; c += 1) {
+    if (index < acc + sizes[c]) return { column: c, row: index - acc };
+    acc += sizes[c];
+  }
+  return { column: Math.max(0, sizes.length - 1), row: 0 };
+}
+function getFrontStackColumnMembers(columnIndex, batteryCount) {
+  const sizes = getFrontStackColumnSizes(batteryCount);
+  const starts = getFrontStackColumnStarts(batteryCount);
+  const out = [];
+  if (columnIndex < 0 || columnIndex >= sizes.length) return out;
+  for (let r = 0; r < sizes[columnIndex]; r += 1) out.push(starts[columnIndex] + r);
+  return out;
+}
+function isFrontStackColumnTop(index, batteryCount) {
+  return getFrontStackPosition(index, batteryCount).row === 0;
+}
+function isFrontStackLastInColumn(index, batteryCount) {
+  const p = getFrontStackPosition(index, batteryCount);
+  return p.row === getFrontStackColumnSizes(batteryCount)[p.column] - 1;
+}
+function isFrontStackBottomBattery(index, batteryLayoutMode, batteryCount) {
   // Any battery below the top (front) battery of its column.
-  return batteryLayoutMode === "front_stacking" && index % getFrontStackHeight() !== 0;
+  return batteryLayoutMode === "front_stacking" && !isFrontStackColumnTop(index, batteryCount);
 }
 function getEffectiveBatteryConnectionType(index, configuredType, batteryLayoutMode) {
   // The configured type is always honoured. Front-stack bottom batteries are
@@ -786,23 +842,48 @@ function getEffectiveBatteryConnectionType(index, configuredType, batteryLayoutM
   return configuredType;
 }
 function getFrontStackColumnCount(batteryCount) {
-  return Math.max(1, Math.ceil(batteryCount / getFrontStackHeight()));
+  return Math.max(1, getFrontStackColumnSizes(batteryCount).length);
 }
-function getTopBatteryIndexForColumn(columnIndex) {
-  return columnIndex * getFrontStackHeight();
+function getTopBatteryIndexForColumn(columnIndex, batteryCount) {
+  const starts = getFrontStackColumnStarts(batteryCount);
+  return columnIndex < starts.length ? starts[columnIndex] : (starts.length ? starts[starts.length - 1] : 0);
 }
 function getBottomBatteryIndexForColumn(columnIndex, batteryCount) {
   // Bottom-most battery of the column, or -1 if the column only has its top battery.
   const members = getFrontStackColumnMembers(columnIndex, batteryCount);
   return members.length > 1 ? members[members.length - 1] : -1;
 }
-function frontStackFlatLink(k) {
+function frontStackFlatLink(k, batteryCount) {
   // Flat batteryLinks index k in front stacking: within a column it is the
-  // vertical link k <-> k+1; the last index of a column is the horizontal link
-  // between the top batteries of column c and column c+1.
-  const H = getFrontStackHeight();
-  const col = Math.floor(k / H), r = k % H;
-  return r < H - 1 ? [k, k + 1] : [col * H, (col + 1) * H];
+  // vertical link k <-> k+1; the last battery of a column owns the horizontal
+  // link between the top batteries of column c and column c+1.
+  const n = currentBatteryCountOr(batteryCount);
+  if (k >= n) return [k, k + 1];
+  const p = getFrontStackPosition(k, n);
+  const sizes = getFrontStackColumnSizes(n);
+  if (p.row < sizes[p.column] - 1) return [k, k + 1];
+  const starts = getFrontStackColumnStarts(n);
+  return [starts[p.column], p.column + 1 < starts.length ? starts[p.column + 1] : n];
+}
+function splitWeightsIntoClusters(weights, parts) {
+  // Contiguous [start, end) ranges whose weight totals follow an even split of
+  // the overall total; a boundary never overshoots its cluster's share.
+  const total = weights.reduce((a, b) => a + b, 0);
+  const base = Math.floor(total / parts), extra = total % parts;
+  const ranges = [];
+  let start = 0, acc = 0, target = 0;
+  for (let p = 0; p < parts; p += 1) {
+    target += base + (p < extra ? 1 : 0);
+    let end = start;
+    if (p === parts - 1) end = weights.length;
+    else {
+      while (end < weights.length && acc + weights[end] <= target) { acc += weights[end]; end += 1; }
+      if (end === start && end < weights.length) { acc += weights[end]; end += 1; }
+    }
+    ranges.push([start, end]);
+    start = end;
+  }
+  return ranges;
 }
 function distributeStartAndEnd(total, parts, index) {
   const start = Math.floor((index * total) / parts);
@@ -843,7 +924,7 @@ function getBatteryEdges(batteryLinks, batteryLayoutMode, batteryCount, extraEdg
     // top batteries of neighbouring columns (see frontStackFlatLink).
     for (let k = 0; k < (batteryLinks || []).length; k += 1) {
       if (!batteryLinks[k]) continue;
-      const ep = frontStackFlatLink(k);
+      const ep = frontStackFlatLink(k, batteryCount);
       add(ep[0], ep[1]);
     }
   } else {
@@ -861,10 +942,10 @@ function batteryEdgeDegree(index, edges) {
   return d;
 }
 
-function flatLinkEndpoints(k, batteryLayoutMode) {
+function flatLinkEndpoints(k, batteryLayoutMode, batteryCount) {
   // The true physical battery endpoints controlled by flat batteryLinks index k.
   if (batteryLayoutMode === "front_stacking") {
-    return frontStackFlatLink(k);
+    return frontStackFlatLink(k, batteryCount);
   }
   return [k, k + 1];
 }
@@ -1114,6 +1195,21 @@ function analyzeSystem(inverterCount, batteryCount, connections, batteryLinks, b
   const globalShareMode = inferGlobalShareMode(effectiveGroups.length);
   const hasMixedShareDoNotShareTopology = hasTrueMixedShareDoNotShareTopology(effectiveGroups, inverterCount, directFlows);
   const isNano = !!model.perPortCurrent || isNanoBatteryModel(batteryModel);
+  if (!isNano) {
+    // A cluster = batteries tied together by power conductors or bridged inverter
+    // ports. Each cluster is limited to the model's maximum.
+    const clusterLimit = getMaxBatteryCountForModel(batteryModel);
+    effectiveGroups.forEach((group) => {
+      const units = batteryModel === "eforce"
+        ? group.reduce((sum, b) => sum + ((eforceStackSizes || [])[b] || 1), 0)
+        : group.length;
+      if (units > clusterLimit) {
+        const unitWord = batteryModel === "eforce" ? "eForce modules" : (batteryModel === "eflex_max" ? "eFlex Max batteries" : "eBoost batteries");
+        alarms.push(batteryNames[group[0]] + "\u2013" + batteryNames[group[group.length - 1]] + " form one cluster of " + units + " " + unitWord +
+          ". A single cluster supports up to " + clusterLimit + ". Use Do not share so each inverter runs its own cluster of up to " + clusterLimit + ".");
+      }
+    });
+  }
   const communicationGroups = isNano
     ? buildNanoCommunicationGroups(inverterCount, batteryCount, directFlows, cableGroups)
     : buildCommunicationGroups(inverterCount, batteryCount, directFlows, edges, bridgedPorts);
@@ -1373,7 +1469,8 @@ const state = {
   configurationMode: "none",
   busbarType: "none",     // eFlex Max only: "busbar" | "eflex_busbar" | "none"
   nanoGroupSizes: [],     // eSpire Nano only: batteries per inverter (0-3), index = inverter
-  frontStackHeight: 2,    // eBoost front stacking: batteries per stack (2 or 3)
+  frontStackHeight: 2,    // eBoost front stacking: default batteries per column (2 or 3)
+  eboostColumnSizes: [],  // eBoost front stacking: custom column heights (1-3); [] = uniform
   wizardActiveStep: "inverter",     // current step key in the guided wizard
   wizardCompletedSteps: [],          // array of step keys that have been confirmed
 };
@@ -1397,6 +1494,7 @@ function setState(patch) {
 
 // === Actions (mutate state and re-render) ===
 function resizeSystem(newInv, newBat) {
+  if ((newBat | 0) !== state.batteryCount) state.eboostColumnSizes = [];
   if (isNanoInverterModel(state.inverterModel) && state.configurationMode === "nano") {
     // Nano auto-config: battery count is the sum of the per-inverter groups.
     // Changing inverters keeps the battery total; changing the battery total
@@ -1410,7 +1508,7 @@ function resizeSystem(newInv, newBat) {
     return;
   }
   const inv = clampCount(newInv, getMaxInverterCount());
-  const bat = clampCount(newBat, getMaxBatteryCountForModel(state.batteryModel));
+  const bat = clampCount(newBat, getMaxBatteryCountForSystem(state.batteryModel, inv));
   const prevConn = state.connections;
   const nextConn = matrix(inv, bat, false);
   for (let i = 0; i < Math.min(inv, prevConn.length); i += 1) {
@@ -1427,7 +1525,7 @@ function resizeSystem(newInv, newBat) {
   // from the battery above). Existing batteries keep whatever the user set.
   if (state.batteryModel !== "eforce" && state.batteryLayoutMode === "front_stacking") {
     for (let i = prevTypes.length; i < bat; i += 1) {
-      if (isFrontStackBottomBattery(i, "front_stacking")) nextTypes[i] = isFrontStackLastInColumn(i, bat) ? "single_point_terminal" : "three_point_terminal";
+      if (isFrontStackBottomBattery(i, "front_stacking", bat)) nextTypes[i] = isFrontStackLastInColumn(i, bat) ? "single_point_terminal" : "three_point_terminal";
     }
   }
   const prevStacks = state.eforceStackSizes || [];
@@ -1533,6 +1631,15 @@ function computeEforceStackArrangement(moduleCount, inverterCount) {
   // at least min(inverterCount, moduleCount) stacks so the bus has somewhere
   // for each inverter to land when modules allow.
   if (moduleCount <= 0) return [];
+  if (moduleCount > EFORCE_MAX_BATTERY_COUNT && (inverterCount | 0) > 1) {
+    // Larger than one cluster: split modules evenly per inverter (Do not share)
+    // and arrange each cluster on its own, so no stack straddles two clusters.
+    const I = inverterCount | 0;
+    const base = Math.floor(moduleCount / I), extra = moduleCount % I;
+    let out = [];
+    for (let c = 0; c < I; c += 1) out = out.concat(computeEforceStackArrangement(base + (c < extra ? 1 : 0), 1));
+    return out;
+  }
   const M = moduleCount;
   const I = Math.max(0, inverterCount | 0);
   const S = Math.max(Math.ceil(M / 3), Math.min(I, M));
@@ -1549,7 +1656,7 @@ function computeEforceStackArrangement(moduleCount, inverterCount) {
 
 function setEforceModuleCount(moduleCount) {
   // Clamp to 1..32 modules and re-pack stacks per the auto-arrange rule.
-  const clamped = Math.max(1, Math.min(EFORCE_MAX_BATTERY_COUNT, moduleCount | 0));
+  const clamped = Math.max(1, Math.min(getMaxBatteryCountForSystem("eforce"), moduleCount | 0));
   state.eforceModuleCount = clamped;
   autoArrangeEforceStacks();
 }
@@ -1569,7 +1676,7 @@ function splitLargestEforceStack() {
   // 1-module stack. Total module count stays the same; stack count grows by 1.
   // Useful when the auto-arranged shape (which minimizes stack count) leaves
   // an oversized stack that pulls too much current under proportional share.
-  if (state.batteryCount >= EFORCE_MAX_BATTERY_COUNT) return;
+  if (state.batteryCount >= getMaxBatteryCountForSystem("eforce")) return;
   const sizes = (state.eforceStackSizes || []).slice();
   let maxIdx = -1;
   let maxSize = 1;
@@ -1751,7 +1858,7 @@ function upgradeBatteryConnectionTypes(connections, batteryLinks, baseTypes, bat
   for (let i = 0; i < batteryCount; i += 1) {
     // Bottom-most battery of a front stack stays at its eWay Lite default;
     // a middle battery (3-high stacks) carries two links, so it is upgraded.
-    if (isFrontStackBottomBattery(i, batteryLayoutMode) && isFrontStackLastInColumn(i, batteryCount)) continue;
+    if (isFrontStackBottomBattery(i, batteryLayoutMode, batteryCount) && isFrontStackLastInColumn(i, batteryCount)) continue;
     const directLandings = connections.reduce((sum, row) => sum + ((row || [])[i] ? 1 : 0), 0);
     const totalLandings = directLandings + batteryEdgeDegree(i, edges);
     if (totalLandings > 3) result[i] = "six_point_busbar";
@@ -1778,7 +1885,7 @@ function applyShareConfiguration(layoutModeOverride) {
     const landings = distributeInverterLandings(inv, columnCount, maxPorts);
     landings.forEach((slots, invIdx) => {
       slots.forEach((col) => {
-        const topIdx = getTopBatteryIndexForColumn(col);
+        const topIdx = getTopBatteryIndexForColumn(col, bat);
         if (topIdx < bat) nextConnections[invIdx][topIdx] = true;
       });
     });
@@ -1863,8 +1970,11 @@ function applyDoNotShareConfiguration(layoutModeOverride) {
     }
     if (inv <= columnCount) {
       // Partition columns proportionally; every inverter gets a contiguous block.
+      // Above one cluster's limit, split by battery count so each cluster stays within it.
+      const colClusterRanges = bat > getMaxBatteryCountForModel(state.batteryModel)
+        ? splitWeightsIntoClusters(getFrontStackColumnSizes(bat), inv) : null;
       for (let i = 0; i < inv; i += 1) {
-        const colRange = distributeStartAndEnd(columnCount, inv, i);
+        const colRange = colClusterRanges ? colClusterRanges[i] : distributeStartAndEnd(columnCount, inv, i);
         const colStart = colRange[0];
         const colEnd = Math.min(columnCount, colRange[1]);
         const groupBatteries = [];
@@ -1875,7 +1985,7 @@ function applyDoNotShareConfiguration(layoutModeOverride) {
         for (let k = 0; k < groupBatteries.length - 1; k += 1) {
           if (groupBatteries[k + 1] === groupBatteries[k] + 1) nextBatteryLinks[groupBatteries[k]] = true;
         }
-        const tops = groupBatteries.filter((idx) => idx % getFrontStackHeight() === 0);
+        const tops = groupBatteries.filter((idx) => isFrontStackColumnTop(idx, bat));
         const landingCount = Math.min(tops.length, maxPorts);
         const startOff = Math.floor((tops.length - landingCount) / 2);
         for (let k = 0; k < landingCount; k += 1) nextConnections[i][tops[startOff + k]] = true;
@@ -1885,7 +1995,7 @@ function applyDoNotShareConfiguration(layoutModeOverride) {
       // (bottoms are eWay Lite landing points). Vertical link in each column feeds bottoms.
       // Analyzer will flag any resulting overload.
       for (let i = 0; i < inv; i += 1) {
-        nextConnections[i][getTopBatteryIndexForColumn(i % columnCount)] = true;
+        nextConnections[i][getTopBatteryIndexForColumn(i % columnCount, bat)] = true;
       }
       for (let c = 0; c < columnCount; c += 1) {
         const members = getFrontStackColumnMembers(c, bat);
@@ -1894,8 +2004,12 @@ function applyDoNotShareConfiguration(layoutModeOverride) {
     }
   } else {
     if (inv <= bat) {
+      // eForce above one cluster's module limit: split stacks by module count.
+      const moduleWeights = isEforce ? Array.from({ length: bat }, (_, k) => (state.eforceStackSizes || [])[k] || 1) : null;
+      const stackClusterRanges = (isEforce && moduleWeights.reduce((a, b) => a + b, 0) > EFORCE_MAX_BATTERY_COUNT)
+        ? splitWeightsIntoClusters(moduleWeights, inv) : null;
       for (let i = 0; i < inv; i += 1) {
-        const range = distributeStartAndEnd(bat, inv, i);
+        const range = stackClusterRanges ? stackClusterRanges[i] : distributeStartAndEnd(bat, inv, i);
         const startBattery = range[0];
         const groupEnd = Math.min(bat, range[1]);
         const groupSize = Math.max(1, groupEnd - startBattery);
@@ -2047,19 +2161,19 @@ function computeBatterySuggestion() {
     unitLabelSingle = "module";
     unitLabelPlural = "modules";
     currentCount = state.eforceModuleCount || state.batteryCount;
-    maxCount = EFORCE_MAX_BATTERY_COUNT;
+    maxCount = state.configurationMode === "share" ? EFORCE_MAX_BATTERY_COUNT : getMaxBatteryCountForSystem("eforce");
   } else if (state.batteryModel === "eflex_max") {
     perUnitA = EFLEX_MAX_CURRENT || 100;
     unitLabelSingle = "battery";
     unitLabelPlural = "batteries";
     currentCount = state.batteryCount;
-    maxCount = getMaxBatteryCountForModel("eflex_max");
+    maxCount = state.configurationMode === "share" ? getMaxBatteryCountForModel("eflex_max") : getMaxBatteryCountForSystem("eflex_max");
   } else {
     perUnitA = 250; // eBoost per-battery max
     unitLabelSingle = "battery";
     unitLabelPlural = "batteries";
     currentCount = state.batteryCount;
-    maxCount = getMaxBatteryCountForModel("eboost");
+    maxCount = state.configurationMode === "share" ? getMaxBatteryCountForModel("eboost") : getMaxBatteryCountForSystem("eboost");
   }
 
   const additional = Math.ceil(shortfallA / perUnitA);
@@ -2098,16 +2212,61 @@ function setBusbarType(busbar) {
   scheduleRender();
 }
 
-function setFrontStackHeight(h) {
-  state.frontStackHeight = Math.max(2, Math.min(3, h | 0));
-  // Re-seed connection-point defaults for the new column shape: bottom-most
-  // battery = eWay Lite, middle (3-high) = eWay, top = eWay.
+function reseedFrontStackTypes() {
+  // Connection-point defaults for the current column shape: bottom-most battery
+  // of a column = eWay Lite; top and middle = eWay (auto-config upgrades as needed).
   if (state.batteryLayoutMode === "front_stacking" && state.batteryModel === "eboost") {
+    const n = state.batteryCount;
     state.batteryConnectionTypes = state.batteryConnectionTypes.map((t, i) =>
-      isFrontStackBottomBattery(i, "front_stacking") && isFrontStackLastInColumn(i, state.batteryCount) ? "single_point_terminal" : "three_point_terminal");
+      isFrontStackBottomBattery(i, "front_stacking", n) && isFrontStackLastInColumn(i, n) ? "single_point_terminal" : "three_point_terminal");
   }
+}
+function applyFrontStackColumns(sizes) {
+  state.eboostColumnSizes = sizes.filter((c) => c > 0);
+  reseedFrontStackTypes();
   reapplyAutoConfigIfNeeded();
   scheduleRender();
+}
+function setFrontStackHeight(h) {
+  // "Arrange all": re-pack every battery into columns of h (remainder last).
+  state.frontStackHeight = Math.max(2, Math.min(3, h | 0));
+  applyFrontStackColumns(uniformFrontStackColumns(state.batteryCount, state.frontStackHeight));
+}
+function setEboostColumnSize(columnIndex, size) {
+  // Override one column's height, keeping the total battery count fixed:
+  // batteries are taken from (or handed back to) the last columns.
+  const n = state.batteryCount;
+  const sizes = getFrontStackColumnSizes(n).slice();
+  if (columnIndex < 0 || columnIndex >= sizes.length) return;
+  const target = Math.max(1, Math.min(3, size | 0));
+  let delta = target - sizes[columnIndex];
+  if (delta === 0) return;
+  const othersTotal = sizes.reduce((a, b) => a + b, 0) - sizes[columnIndex];
+  if (delta > othersTotal) return; // not enough batteries elsewhere to grow this column
+  sizes[columnIndex] = target;
+  for (let j = sizes.length - 1; j >= 0 && delta > 0; j -= 1) {
+    if (j === columnIndex) continue;
+    const take = Math.min(delta, sizes[j]);
+    sizes[j] -= take;
+    delta -= take;
+  }
+  while (delta < 0) {
+    const last = sizes.length - 1;
+    if (last !== columnIndex && sizes[last] > 0 && sizes[last] < 3) sizes[last] += 1;
+    else sizes.push(1);
+    delta += 1;
+  }
+  applyFrontStackColumns(sizes);
+}
+function splitLargestEboostColumn() {
+  // Take one battery off the tallest column and start a new 1-battery column.
+  const sizes = getFrontStackColumnSizes(state.batteryCount).slice();
+  let maxIdx = -1, maxSize = 1;
+  sizes.forEach((c, i) => { if (c > maxSize) { maxSize = c; maxIdx = i; } });
+  if (maxIdx === -1) return;
+  sizes[maxIdx] -= 1;
+  sizes.push(1);
+  applyFrontStackColumns(sizes);
 }
 function setBatteryLayoutMode(mode) {
   // eForce and eFlex Max only support side-by-side; ignore front-stacking attempts.
@@ -2253,11 +2412,12 @@ function buildSvg(state, results) {
   const inverterCount = state.inverterCount;
   const batteryCount = state.batteryCount;
   const isFrontStacking = state.batteryLayoutMode === "front_stacking";
-  const fsH = getFrontStackHeight();
-  const stackingColumns = isFrontStacking ? Math.ceil(batteryCount / fsH) : batteryCount;
+  const fsSizes = isFrontStacking ? getFrontStackColumnSizes(batteryCount) : [];
+  const fsRows = Math.max(2, ...(fsSizes.length ? fsSizes : [2]));
+  const stackingColumns = isFrontStacking ? Math.max(1, fsSizes.length) : batteryCount;
   const diagramWidth = Math.max(860, Math.max(inverterCount, stackingColumns) * 170 + 240);
   const isEforceLayout = state.batteryModel === "eforce";
-  const diagramHeight = isFrontStacking ? 610 + (fsH - 2) * 180 : 470;
+  const diagramHeight = isFrontStacking ? 610 + (fsRows - 2) * 180 : 470;
   const inverterY = 90;
   const batteryTopY = isFrontStacking ? 250 : diagramHeight - 170;
   const batteryBottomY = isFrontStacking ? 430 : batteryTopY;
@@ -2271,9 +2431,10 @@ function buildSvg(state, results) {
         y: batteryTopY,
       };
     }
-    const columnIndex = Math.floor(i / fsH);
-    const rowIndex = i % fsH;
-    const columnCount = Math.max(1, Math.ceil(batteryCount / fsH));
+    const fsPos = getFrontStackPosition(i, batteryCount);
+    const columnIndex = fsPos.column;
+    const rowIndex = fsPos.row;
+    const columnCount = Math.max(1, fsSizes.length);
     return {
       name,
       x: columnCount === 1 ? diagramWidth / 2 - 64 : 120 + columnIndex * ((diagramWidth - 240) / Math.max(1, columnCount - 1)) - 64,
@@ -2510,7 +2671,7 @@ function buildSvg(state, results) {
     for (let offset = 0; offset < Math.max(0, frontStackColumnCount - 1); offset += 1) {
       const fromColumn = frontStackColumnCount - 1 - offset;
       const toColumn = fromColumn - 1;
-      const fromTopIndex = getTopBatteryIndexForColumn(fromColumn);
+      const fromTopIndex = getTopBatteryIndexForColumn(fromColumn, batteryCount);
       const toBottomIndex = getBottomBatteryIndexForColumn(toColumn, batteryCount);
       if (fromTopIndex >= batteryCount || toBottomIndex === -1) continue;
       const from = batteryPositions[fromTopIndex];
@@ -2535,7 +2696,7 @@ function buildSvg(state, results) {
   // Front-stack do-not-share comm
   if (isFrontStackDoNotShare) {
     results.batteryGroups.forEach((group, groupIndex) => {
-      const topIndices = group.filter((batteryIndex) => batteryIndex % fsH === 0);
+      const topIndices = group.filter((batteryIndex) => isFrontStackColumnTop(batteryIndex, batteryCount));
       const touchedInverter = results.inverterNames.findIndex((_, inv) =>
         group.some((batteryIndex) => ((results.directFlows[inv] || [])[batteryIndex] || 0) > 0)
       );
@@ -2549,7 +2710,7 @@ function buildSvg(state, results) {
       group.forEach((upperIndex) => {
         // Vertical comm within a column: each battery -> the one directly below it.
         const bottomIndex = upperIndex + 1;
-        if (bottomIndex % fsH === 0 || group.indexOf(bottomIndex) === -1) return;
+        if (bottomIndex >= batteryCount || isFrontStackColumnTop(bottomIndex, batteryCount) || group.indexOf(bottomIndex) === -1) return;
         const top = batteryPositions[upperIndex];
         const bottom = batteryPositions[bottomIndex];
         svg += '<line x1="' + (top.x + 94) + '" y1="' + (top.y + 102) + '" x2="' + (bottom.x + 94) + '" y2="' + (bottom.y - 6) + '" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6 5"/>';
@@ -2848,13 +3009,13 @@ function buildSetupPanel(state, results) {
         html += '</div>';
         if (state.batteryModel === 'eforce') {
           const eforceModules = state.eforceModuleCount || 1;
-          html += '<label class="subFieldLabel" style="margin-top:10px">Number of eForce modules (1\u201332)</label>';
+          html += '<label class="subFieldLabel" style="margin-top:10px">Number of eForce modules (1\u2013' + getMaxBatteryCountForSystem('eforce') + ')</label>';
           html += '<div class="row">';
           html += '<button class="smallButton" data-action="eforceModMinus">\u2212</button>';
           html += '<input class="input" data-action="eforceModInput" value="' + eforceModules + '"/>';
           html += '<button class="smallButton" data-action="eforceModPlus">+</button>';
           html += '</div>';
-          html += '<div class="helper">Each module is 9.6 kWh. Stacks are arranged in the next step.</div>';
+          html += '<div class="helper">Each module is 9.6 kWh. Stacks are arranged in the next step. Up to ' + EFORCE_MAX_BATTERY_COUNT + ' modules per cluster' + (getClusterCountForLimits() > 1 ? '; above ' + EFORCE_MAX_BATTERY_COUNT + ' requires Do not share (one cluster per inverter).' : '.') + '</div>';
         } else {
           html += '<label class="subFieldLabel" style="margin-top:10px">Number of batteries</label>';
           html += '<div class="row">';
@@ -2862,6 +3023,8 @@ function buildSetupPanel(state, results) {
           html += '<input class="input" data-action="batInput" value="' + bat + '"/>';
           html += '<button class="smallButton" data-action="batPlus">+</button>';
           html += '</div>';
+          const perCluster = getMaxBatteryCountForModel(state.batteryModel);
+          html += '<div class="helper">Up to ' + perCluster + ' per cluster' + (getClusterCountForLimits() > 1 ? ' (max ' + getMaxBatteryCountForSystem(state.batteryModel) + ' with ' + inv + ' inverters). Above ' + perCluster + ' requires Do not share, where each inverter runs its own cluster.' : '.') + '</div>';
         }
         html += '<div class="wizardContinueRow"><button class="wizardContinue" data-action="continueWizard" data-step="battery">Continue \u2192</button></div>';
         html += '</div>';
@@ -2869,7 +3032,7 @@ function buildSetupPanel(state, results) {
     } else if (step.key === 'layout') {
       // eBoost only
       if (status === 'completed') {
-        html += '<div class="wizardStepSummary">' + (state.batteryLayoutMode === 'side_by_side' ? 'Side by side' : 'Front stacking \u00b7 ' + getFrontStackHeight() + ' per stack') + '</div>';
+        html += '<div class="wizardStepSummary">' + (state.batteryLayoutMode === 'side_by_side' ? 'Side by side' : 'Front stacking \u00b7 columns ' + getFrontStackColumnSizes(bat).join(' + ')) + '</div>';
       } else {
         html += '<div class="wizardStepBody">';
         html += '<div class="configButtonRow">';
@@ -2877,11 +3040,29 @@ function buildSetupPanel(state, results) {
         html += '<button class="btn' + (state.batteryLayoutMode === 'front_stacking' ? ' active' : '') + '" data-action="layoutFront">Front stacking</button>';
         html += '</div>';
         if (state.batteryLayoutMode === 'front_stacking') {
-          const H = getFrontStackHeight();
-          html += '<label class="subFieldLabel" style="margin-top:10px">Batteries per stack</label>';
-          html += '<div class="configButtonRow">';
+          const colSizes = getFrontStackColumnSizes(bat);
+          const colStarts = getFrontStackColumnStarts(bat);
+          const isUniform = (h) => uniformFrontStackColumns(bat, h).join(',') === colSizes.join(',');
+          const canSplitCol = colSizes.some((c) => c > 1);
+          html += '<div class="row" style="justify-content:space-between;align-items:center;margin:12px 0 8px;flex-wrap:wrap;gap:8px">';
+          html += '<div style="font-size:12px;color:#475569">' + colSizes.length + ' column' + (colSizes.length === 1 ? '' : 's') + ' \u00b7 ' + bat + ' batter' + (bat === 1 ? 'y' : 'ies') + '</div>';
+          html += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
           [2, 3].forEach((n) => {
-            html += '<button class="btn' + (H === n ? ' active' : '') + '" data-action="fsHeight" data-n="' + n + '">' + n + ' high</button>';
+            html += '<button class="btn' + (isUniform(n) ? ' active' : '') + '" style="padding:4px 10px" data-action="fsHeight" data-n="' + n + '">All ' + n + ' high</button>';
+          });
+          html += '<button class="btn" style="padding:4px 10px' + (canSplitCol ? '' : ';opacity:0.4;cursor:not-allowed') + '" data-action="splitEboostColumn"' + (canSplitCol ? '' : ' disabled') + '>+ Split largest</button>';
+          html += '</div></div>';
+          html += '<div class="helper" style="margin-bottom:8px">Click 1/2/3 to set an individual column. The total number of batteries stays the same.</div>';
+          html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px">';
+          colSizes.forEach((size, c) => {
+            const first = colStarts[c] + 1, last = colStarts[c] + size;
+            html += '<div style="display:flex;align-items:center;gap:6px;font-size:12px">';
+            html += '<span style="min-width:30px;font-weight:600">C' + (c + 1) + '</span>';
+            [1, 2, 3].forEach((n) => {
+              html += '<button class="btn' + (size === n ? ' active' : '') + '" style="padding:2px 8px;font-size:11px;min-width:0" data-action="eboostColumn" data-idx="' + c + '" data-n="' + n + '">' + n + '</button>';
+            });
+            html += '<span class="helper" style="margin-left:4px">' + (first === last ? 'B' + first : 'B' + first + '\u2013B' + last) + '</span>';
+            html += '</div>';
           });
           html += '</div>';
         }
@@ -2901,7 +3082,7 @@ function buildSetupPanel(state, results) {
         html += '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">';
         html += '<div style="font-size:12px;color:#475569">' + bat + ' stack' + (bat === 1 ? '' : 's') + ' \u00b7 ' + eforceModules + ' module' + (eforceModules === 1 ? '' : 's') + ' \u00b7 ' + (eforceModules * EFORCE_MODULE_KWH).toFixed(1) + ' kWh total</div>';
         html += '<div style="display:flex;gap:6px">';
-        const canSplit = bat < EFORCE_MAX_BATTERY_COUNT && (state.eforceStackSizes || []).some((s) => s > 1);
+        const canSplit = bat < getMaxBatteryCountForSystem("eforce") && (state.eforceStackSizes || []).some((s) => s > 1);
         html += '<button class="btn" style="padding:4px 10px' + (canSplit ? '' : ';opacity:0.4;cursor:not-allowed') + '" data-action="splitEforceStack"' + (canSplit ? '' : ' disabled') + '>+ Split largest</button>';
         html += '<button class="btn" data-action="autoArrangeStacks">Auto-arrange</button>';
         html += '</div></div>';
@@ -2936,7 +3117,7 @@ function buildSetupPanel(state, results) {
         html += '<div style="font-size:12px;color:#475569">' + bat + ' batter' + (bat === 1 ? 'y' : 'ies') + ' \u00b7 ' + (bat * unitKwh) + ' kWh total</div>';
         html += '<button class="btn" data-action="nanoAutoArrange">Auto-arrange</button>';
         html += '</div>';
-        html += '<div class="helper" style="margin-bottom:8px">Pick 0\u20133 batteries for each inverter. The inverter ties into the first battery and the rest daisy-chain from it. Both ports land on the first battery\u2019s busbar.</div>';
+        html += '<div class="helper" style="margin-bottom:8px">Pick 0\u2013' + NANO_MAX_BATTERIES_PER_INVERTER + ' batteries for each inverter. The inverter ties into the first battery and the rest daisy-chain from it. Both ports land on the first battery\u2019s busbar.</div>';
         let cursor = 0;
         sizes.forEach((g, i) => {
           const b = (k) => 'B' + (cursor + k + 1);
@@ -2948,7 +3129,7 @@ function buildSetupPanel(state, results) {
             : landing + ' \u00b7 daisy chain ' + chain;
           html += '<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;flex-wrap:wrap">';
           html += '<span style="min-width:30px;font-weight:600">I' + (i + 1) + '</span>';
-          [0, 1, 2, 3].forEach((n) => {
+          Array.from({ length: NANO_MAX_BATTERIES_PER_INVERTER + 1 }, (_, n) => n).forEach((n) => {
             const active = g === n ? ' active' : '';
             html += '<button class="btn' + active + '" style="padding:2px 8px;font-size:11px;min-width:0" data-action="nanoGroup" data-idx="' + i + '" data-n="' + n + '">' + n + '</button>';
           });
@@ -2968,12 +3149,18 @@ function buildSetupPanel(state, results) {
         const soloInverter = state.inverterModel === 'solo_6_5kw';
         html += '<div class="wizardStepBody">';
         html += '<div class="configButtonRow">';
-        html += '<button class="btn' + (state.configurationMode === 'share' ? ' active' : '') + '" data-action="autoShare">Share battery</button>';
+        const shareUnits = state.batteryModel === 'eforce' ? (state.eforceModuleCount || bat) : bat;
+        const shareLimit = getMaxBatteryCountForModel(state.batteryModel);
+        const shareBlocked = shareUnits > shareLimit;
+        html += '<button class="btn' + (state.configurationMode === 'share' ? ' active' : '') + '" data-action="autoShare"' + (shareBlocked ? ' disabled style="opacity:0.4;cursor:not-allowed"' : '') + '>Share battery</button>';
         if (!soloInverter) {
           html += '<button class="btn' + (state.configurationMode === 'do_not_share' ? ' active' : '') + '" data-action="autoDoNotShare">Do not share battery</button>';
         }
         html += '</div>';
         html += '<div class="helper">Share battery auto-configures a shared layout using eWay connection points and enables all adjacent battery conductors.</div>';
+        if (shareBlocked) {
+          html += '<div class="helper" style="color:#b45309">Share battery is limited to ' + shareLimit + (state.batteryModel === 'eforce' ? ' modules' : ' batteries') + ' in one cluster. With ' + shareUnits + ', use Do not share so each inverter runs its own cluster.</div>';
+        }
         if (!soloInverter) {
           html += '<div class="helper">Do not share battery splits batteries into isolated groups per inverter, with battery-to-battery conductors inside each group.</div>';
         } else {
@@ -3038,7 +3225,7 @@ function buildSetupPanel(state, results) {
   results.batteryNames.forEach((name, i) => {
     const appliedType = isEforce ? EFORCE_FIXED_TYPE : getEffectiveBatteryConnectionType(i, state.batteryConnectionTypes[i] || 'three_point_terminal', state.batteryLayoutMode);
     const config = getConnectionPointConfig(appliedType, state.batteryModel);
-    const lockedFrontStackLite = !isEforce && isFrontStackBottomBattery(i, state.batteryLayoutMode) && isFrontStackLastInColumn(i, state.batteryCount);
+    const lockedFrontStackLite = !isEforce && isFrontStackBottomBattery(i, state.batteryLayoutMode, state.batteryCount) && isFrontStackLastInColumn(i, state.batteryCount);
     const lockedEforce = isEforce || isNanoBat;
     html += '<div class="bpRow">';
     html += '<div>';
@@ -3075,7 +3262,7 @@ function buildSetupPanel(state, results) {
     html += '<div class="helper">Each conductor is rated ' + CONDUCTOR_RATING + ' A DC. Toggle the standard conductors, or add a custom one between any two batteries to mirror an installer\u2019s single-line diagram.</div>';
     // Standard (auto-config) conductors, shown with their TRUE physical endpoints.
     for (let i = 0; i < Math.max(0, bat - 1); i += 1) {
-      const ep = flatLinkEndpoints(i, state.batteryLayoutMode);
+      const ep = flatLinkEndpoints(i, state.batteryLayoutMode, state.batteryCount);
       if (ep[0] < 0 || ep[1] >= bat) continue;
       html += '<div class="bbRow">';
       html += '<div>';
@@ -3414,7 +3601,12 @@ document.addEventListener('click', (e) => {
     case 'invPlus': resizeSystem(state.inverterCount + 1, state.batteryCount); break;
     case 'batMinus': resizeSystem(state.inverterCount, state.batteryCount - 1); break;
     case 'batPlus': resizeSystem(state.inverterCount, state.batteryCount + 1); break;
-    case 'autoShare': autoConfigureShareBattery(); break;
+    case 'autoShare': {
+      const units = state.batteryModel === 'eforce' ? (state.eforceModuleCount || state.batteryCount) : state.batteryCount;
+      if (units > getMaxBatteryCountForModel(state.batteryModel)) break; // larger than one cluster
+      autoConfigureShareBattery();
+      break;
+    }
     case 'autoDoNotShare': autoConfigureDoNotShareBattery(); break;
     case 'autoBusbar': setBusbarType('busbar'); break;
     case 'autoEflexBusbar': setBusbarType('eflex_busbar'); break;
@@ -3425,6 +3617,8 @@ document.addEventListener('click', (e) => {
     case 'layoutSide': setBatteryLayoutMode('side_by_side'); break;
     case 'layoutFront': setBatteryLayoutMode('front_stacking'); break;
     case 'fsHeight': setFrontStackHeight(parseInt(el.getAttribute('data-n'), 10)); break;
+    case 'splitEboostColumn': splitLargestEboostColumn(); break;
+    case 'eboostColumn': setEboostColumnSize(parseInt(el.getAttribute('data-idx'), 10), parseInt(el.getAttribute('data-n'), 10)); break;
     case 'setBatteryEboost': setBatteryModel('eboost'); break;
     case 'setBatteryEforce': setBatteryModel('eforce'); break;
     case 'setBatteryEflexMax': setBatteryModel('eflex_max'); break;
@@ -3597,7 +3791,8 @@ function applyUrlPreFill() {
     const modulesPerStack = batConfig.modulesPerStack;
     const stacks = batQty !== null ? batQty : 1;
     const desired = stacks * modulesPerStack;
-    const total = Math.max(1, Math.min(EFORCE_MAX_BATTERY_COUNT, desired));
+    state.inverterCount = finalInvCount;
+    const total = Math.max(1, Math.min(getMaxBatteryCountForSystem("eforce"), desired));
     const sizes = [];
     let remaining = total;
     while (remaining > 0) {
@@ -3610,7 +3805,8 @@ function applyUrlPreFill() {
     state.eforceStackSizes = sizes; // resizeSystem may default these; restore desired arrangement.
   } else {
     const target = batQty !== null ? batQty : state.batteryCount;
-    const maxBat = getMaxBatteryCountForModel(state.batteryModel);
+    state.inverterCount = finalInvCount;
+    const maxBat = getMaxBatteryCountForSystem(state.batteryModel);
     const finalBatCount = Math.min(Math.max(1, target), maxBat);
     resizeSystem(finalInvCount, finalBatCount);
   }
